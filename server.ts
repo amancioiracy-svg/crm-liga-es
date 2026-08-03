@@ -28,6 +28,11 @@ const memoryLeadsMap = new Map<string, Lead>();
 const memoryCallLogsMap = new Map<string, CallLog[]>();
 
 async function initDatabase() {
+  // Already connected — nothing to do.
+  if (usePostgres) {
+    return;
+  }
+
   const dbUrl = process.env.DATABASE_URL?.trim();
   if (dbUrl) {
     try {
@@ -537,7 +542,8 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // START SERVER & VITE INTEGRATION
 async function main() {
-  await initDatabase();
+  // Start server immediately so the healthcheck can respond without waiting on the database
+  const distPath = path.join(process.cwd(), 'dist');
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -546,7 +552,6 @@ async function main() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
@@ -556,6 +561,36 @@ async function main() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 CRM Server running on http://0.0.0.0:${PORT}`);
   });
+
+  // Initialize database in the background with retries so it never blocks startup
+  initDatabaseWithRetry();
+}
+
+// Retries the database connection in the background without blocking server startup.
+async function initDatabaseWithRetry() {
+  let attempts = 0;
+  const maxAttempts = 30; // ~2.5 minutes with 5-second intervals
+
+  while (attempts < maxAttempts && !usePostgres) {
+    try {
+      await initDatabase();
+      if (usePostgres) {
+        console.log('✅ Database connection established successfully');
+        break;
+      }
+    } catch (err) {
+      console.warn(`⚠️ Database connection attempt ${attempts + 1}/${maxAttempts} failed. Retrying in 5s...`, err);
+    }
+
+    if (!usePostgres) {
+      attempts++;
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  }
+
+  if (!usePostgres && attempts >= maxAttempts) {
+    console.warn('⚠️ Failed to connect to PostgreSQL after max retries. Continuing with in-memory mode.');
+  }
 }
 
 main();
