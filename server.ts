@@ -28,7 +28,7 @@ const memoryLeadsMap = new Map<string, Lead>();
 const memoryCallLogsMap = new Map<string, CallLog[]>();
 
 async function initDatabase() {
-  const dbUrl = process.env.DATABASE_URL;
+  const dbUrl = process.env.DATABASE_URL?.trim();
   if (dbUrl) {
     try {
       console.log('Connecting to PostgreSQL database...');
@@ -36,7 +36,13 @@ async function initDatabase() {
         connectionString: dbUrl,
         ssl: process.env.NODE_ENV === 'production' && !dbUrl.includes('localhost') 
           ? { rejectUnauthorized: false } 
-          : false
+          : false,
+        connectionTimeoutMillis: 10000,
+      });
+
+      // Prevent uncaught errors on idle clients from crashing process
+      pgPool.on('error', (err) => {
+        console.error('Unexpected error on idle PostgreSQL client:', err);
       });
 
       // Test connection
@@ -75,6 +81,16 @@ async function initDatabase() {
     usePostgres = false;
   }
 }
+
+// HEALTHCHECK ROUTE (Fast response for Railway & Docker health checks)
+app.get(['/health', '/api/health'], (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    database: usePostgres ? 'postgresql' : 'in-memory',
+    timestamp: new Date().toISOString()
+  });
+});
 
 // API ROUTES
 
