@@ -528,6 +528,16 @@ app.post('/api/seed-samples', async (req, res) => {
   res.json({ message: `${insertedCount} leads de exemplo adicionados com sucesso!` });
 });
 
+// Static assets & SPA fallback (Production)
+const distPath = path.resolve(process.cwd(), 'dist');
+if (process.env.NODE_ENV === 'production' && fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // 404 Handler for API routes (returns JSON instead of falling through to HTML SPA fallback)
 app.use('/api/*', (req, res) => {
   res.status(404).json({ error: `Rota de API não encontrada: ${req.originalUrl}` });
@@ -553,12 +563,6 @@ async function main() {
       appType: 'spa'
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
@@ -569,6 +573,20 @@ async function main() {
       console.error('Background initDatabase error:', err);
     });
   });
+
+  // Dual-port binding to guarantee Railway public domain routing works whether Railway maps PORT or 3000
+  if (PORT !== 3000) {
+    try {
+      const fallbackServer = app.listen(3000, '0.0.0.0', () => {
+        console.log(`🚀 CRM Server also listening on fallback port http://0.0.0.0:3000`);
+      });
+      fallbackServer.on('error', () => {
+        // Silently ignore if port 3000 is already bound
+      });
+    } catch {
+      // Ignore if port 3000 is already in use
+    }
+  }
 }
 
 main();
