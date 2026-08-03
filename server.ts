@@ -27,26 +27,32 @@ let usePostgres = false;
 const memoryLeadsMap = new Map<string, Lead>();
 const memoryCallLogsMap = new Map<string, CallLog[]>();
 
-async function initDatabase() {
+async function initDatabase(retries = 5, delayMs = 3000) {
   const dbUrl = process.env.DATABASE_URL?.trim();
-  if (dbUrl) {
+  if (!dbUrl) {
+    console.log('ℹ️ No DATABASE_URL environment variable set. Operating in in-memory mode.');
+    usePostgres = false;
+    return;
+  }
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log('Connecting to PostgreSQL database...');
-      pgPool = new pg.Pool({
+      console.log(`[Database] Attempting connection to PostgreSQL (attempt ${attempt}/${retries})...`);
+      
+      const isInternal = dbUrl.includes('railway.internal') || dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
+      const sslConfig = isInternal ? false : { rejectUnauthorized: false };
+
+      const pool = new pg.Pool({
         connectionString: dbUrl,
-        ssl: process.env.NODE_ENV === 'production' && !dbUrl.includes('localhost') 
-          ? { rejectUnauthorized: false } 
-          : false,
-        connectionTimeoutMillis: 10000,
+        ssl: sslConfig,
+        connectionTimeoutMillis: 5000,
       });
 
-      // Prevent uncaught errors on idle clients from crashing process
-      pgPool.on('error', (err) => {
+      pool.on('error', (err) => {
         console.error('Unexpected error on idle PostgreSQL client:', err);
       });
 
-      // Test connection
-      const client = await pgPool.connect();
+      const client = await pool.connect();
       
       // Auto-create tables if they don't exist
       await client.query(`
@@ -70,20 +76,24 @@ async function initDatabase() {
       `);
 
       client.release();
+      pgPool = pool;
       usePostgres = true;
       console.log('✅ PostgreSQL connected and schema verified successfully.');
+      return;
     } catch (err) {
-      console.warn('⚠️ Could not connect to PostgreSQL (DATABASE_URL provided). Falling back to in-memory store:', err);
-      usePostgres = false;
+      console.warn(`⚠️ PostgreSQL connection attempt ${attempt} failed:`, (err as Error).message);
+      if (attempt < retries) {
+        await new Promise((res) => setTimeout(res, delayMs));
+      }
     }
-  } else {
-    console.log('ℹ️ No DATABASE_URL environment variable set. Operating in in-memory mode.');
-    usePostgres = false;
   }
+
+  console.warn('⚠️ All PostgreSQL connection attempts failed. Falling back to in-memory mode.');
+  usePostgres = false;
 }
 
 // HEALTHCHECK ROUTE (Fast response for Railway & Docker health checks)
-app.get(['/health', '/api/health'], (req, res) => {
+app.get(['/health', '/api/health', '/healthz', '/ping'], (req, res) => {
   res.status(200).json({
     status: 'ok',
     uptime: Math.floor(process.uptime()),
@@ -537,8 +547,6 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // START SERVER & VITE INTEGRATION
 async function main() {
-  await initDatabase();
-
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -555,6 +563,11 @@ async function main() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 CRM Server running on http://0.0.0.0:${PORT}`);
+    
+    // Connect to database in the background without holding up server startup or healthchecks
+    initDatabase().catch((err) => {
+      console.error('Background initDatabase error:', err);
+    });
   });
 }
 
