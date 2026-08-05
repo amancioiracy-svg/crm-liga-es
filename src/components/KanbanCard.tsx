@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Lead, PIPELINE_COLUMNS, ColumnStatus } from '../types';
-import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
+import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronRight, Check, CalendarClock, AlertTriangle, Clock } from 'lucide-react';
 import { getWhatsAppUrl } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
+import { getFollowUpInfo } from '../lib/followUp';
 
 interface KanbanCardProps {
   lead: Lead;
+  tags?: CustomTag[];
   onOpenDetails: (lead: Lead) => void;
   onMoveColumn: (leadId: string, newColumn: ColumnStatus) => void;
   onShowToast: (message: string) => void;
@@ -13,6 +15,7 @@ interface KanbanCardProps {
 
 export const KanbanCard: React.FC<KanbanCardProps> = ({
   lead,
+  tags = [],
   onOpenDetails,
   onMoveColumn,
   onShowToast
@@ -22,6 +25,14 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
   const [copiedPhone, setCopiedPhone] = useState(false);
 
   const currentColumnIndex = PIPELINE_COLUMNS.indexOf(lead.columnStatus);
+
+  const getTagStyle = (tagName: string) => {
+    const found = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
+    if (found) {
+      return { color: found.color, backgroundColor: found.bgColor };
+    }
+    return { color: '#374151', backgroundColor: '#f3f4f6' };
+  };
 
   // 1. Copiar URL (dithoSitesMetadata.publicUrl)
   const handleCopyUrl = (e: React.MouseEvent) => {
@@ -66,12 +77,51 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
     }
   };
 
+  const followUpInfo = getFollowUpInfo(lead.nextFollowUpAt);
+
+  const getBorderClasses = () => {
+    if (followUpInfo.status === 'OVERDUE') {
+      return 'border-l-4 border-l-rose-500 border-rose-200 bg-rose-50/20 shadow-xs';
+    }
+    if (followUpInfo.status === 'TODAY') {
+      return 'border-l-4 border-l-amber-500 border-amber-200 bg-amber-50/20 shadow-xs';
+    }
+    if (followUpInfo.status === 'SCHEDULED') {
+      return 'border-l-4 border-l-blue-400 border-neutral-200';
+    }
+    return 'border-neutral-200';
+  };
+
   return (
     <>
       <div 
         onClick={() => onOpenDetails(lead)}
-        className="group relative bg-white border border-neutral-200 hover:border-neutral-300 hover:shadow-xs rounded-lg p-3 transition-all duration-150 cursor-pointer select-none"
+        className={`group relative bg-white border hover:border-neutral-300 hover:shadow-xs rounded-lg p-3 transition-all duration-150 cursor-pointer select-none ${getBorderClasses()}`}
       >
+        {/* Distintivo Visual de Follow-Up (Retorno) se existir */}
+        {followUpInfo.status !== 'NONE' && (
+          <div className="mb-2">
+            {followUpInfo.status === 'OVERDUE' && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 animate-pulse">
+                <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                <span>⚠️ {followUpInfo.label}</span>
+              </span>
+            )}
+            {followUpInfo.status === 'TODAY' && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                <span>🔔 {followUpInfo.label}</span>
+              </span>
+            )}
+            {followUpInfo.status === 'SCHEDULED' && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                <CalendarClock className="w-3 h-3 text-blue-600 shrink-0" />
+                <span>📅 {followUpInfo.label}</span>
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Header do Card: Nome em negrito sutil & Ações de movimento */}
         <div className="flex items-start justify-between gap-2 mb-1.5">
           <h4 className="text-xs font-semibold text-neutral-800 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">
@@ -91,11 +141,23 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           </button>
         </div>
 
-        {/* Número de Telefone Bruto */}
-        <p className="text-[11px] font-mono text-neutral-500 mb-2.5 flex items-center gap-1">
-          <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
-          <span>{lead.phoneNumber}</span>
-        </p>
+        {/* Número de Telefone Bruto & Tag da Última Ligação */}
+        <div className="flex items-center justify-between gap-1 mb-2">
+          <p className="text-[11px] font-mono text-neutral-500 flex items-center gap-1 min-w-0 truncate">
+            <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
+            <span className="truncate">{lead.phoneNumber}</span>
+          </p>
+
+          {lead.lastCallTag && (
+            <span
+              style={getTagStyle(lead.lastCallTag)}
+              className="text-[9px] font-semibold px-1.5 py-0.5 rounded border border-black/5 shrink-0 truncate max-w-[110px]"
+              title={`Última ligação: ${lead.lastCallTag}`}
+            >
+              {lead.lastCallTag}
+            </span>
+          )}
+        </div>
 
         {/* Tag do site se houver */}
         {lead.publicUrl && (

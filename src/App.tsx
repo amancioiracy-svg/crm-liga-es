@@ -1,25 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Lead, ColumnStatus, CallTag } from './types';
+import { Lead, ColumnStatus, CustomTag } from './types';
 import { Sidebar } from './components/Sidebar';
 import { KanbanBoard } from './components/KanbanBoard';
 import { AllLeadsTable } from './components/AllLeadsTable';
 import { LeadDetailModal } from './components/LeadDetailModal';
+import { TagManagerModal } from './components/TagManagerModal';
 import { ZipUploadModal } from './components/ZipUploadModal';
+import { MetricsBar } from './components/MetricsBar';
 import { Toast } from './components/Toast';
 import { PhoneCall, Users, CheckCircle, RefreshCw } from 'lucide-react';
 
 export default function App() {
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [tags, setTags] = useState<CustomTag[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(true);
   const [activeTab, setActiveTab] = useState<'kanban' | 'table'>('kanban');
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string>('ALL');
   
   // Modals & Toasts
   const [selectedLeadForDetail, setSelectedLeadForDetail] = useState<Lead | null>(null);
   const [isZipModalOpen, setIsZipModalOpen] = useState(false);
+  const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLeads();
+    fetchTags();
   }, []);
 
   const fetchLeads = async () => {
@@ -36,6 +42,19 @@ export default function App() {
       showToast('Erro ao carregar lista de leads.');
     } finally {
       setLoadingLeads(false);
+    }
+  };
+
+  const fetchTags = async () => {
+    try {
+      const res = await fetch('/api/tags');
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        setTags(data);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar etiquetas:', err);
     }
   };
 
@@ -71,11 +90,11 @@ export default function App() {
   };
 
   // Registrar ligação para o lead
-  const handleAddCallLog = async (leadId: string, tag: CallTag, comment: string) => {
+  const handleAddCallLog = async (leadId: string, tag: string, comment: string, durationSeconds?: number, followUpAt?: string) => {
     const res = await fetch(`/api/leads/${leadId}/calls`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag, comment })
+      body: JSON.stringify({ tag, comment, durationSeconds, followUpAt })
     });
 
     if (res.ok) {
@@ -119,27 +138,35 @@ export default function App() {
     }
   };
 
+  // Filter leads by selected tag
+  const displayedLeads = leads.filter((l) => {
+    if (selectedTagFilter === 'ALL') return true;
+    return l.lastCallTag === selectedTagFilter;
+  });
+
   return (
-    <div className="flex min-h-screen bg-[#f8f9fa] text-neutral-900 font-sans antialiased">
+    <div className="flex h-screen bg-[#f8f9fa] text-neutral-900 font-sans antialiased overflow-hidden">
       {/* Sidebar de Navegação */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenZipModal={() => setIsZipModalOpen(true)}
+        onOpenTagsModal={() => setIsTagsModalOpen(true)}
         onSeedSamples={handleSeedSamples}
         totalLeads={leads.length}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden">
         {/* Top Navbar Header */}
-        <header className="bg-white border-b border-neutral-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-10 shadow-2xs">
+        <header className="bg-white border-b border-neutral-200 px-6 py-3 flex items-center justify-between shrink-0 shadow-2xs z-10">
           <div>
             <h2 className="text-sm font-bold text-neutral-900 tracking-tight">
               {activeTab === 'kanban' ? 'Pipeline Kanban de Vendas' : 'Lista Completa de Leads'}
             </h2>
             <p className="text-[11px] text-neutral-500">
-              {leads.length} lead(s) cadastrado(s) no sistema
+              {displayedLeads.length} de {leads.length} lead(s) exibido(s)
+              {selectedTagFilter !== 'ALL' && ` (filtrado por etiqueta "${selectedTagFilter}")`}
             </p>
           </div>
 
@@ -154,8 +181,17 @@ export default function App() {
           </div>
         </header>
 
+        {/* Barra de Métricas & Filtros de Vendas */}
+        <MetricsBar
+          leads={leads}
+          tags={tags}
+          selectedTagFilter={selectedTagFilter}
+          onTagFilterChange={(tag) => setSelectedTagFilter(tag)}
+          onShowToast={showToast}
+        />
+
         {/* View Content */}
-        <div className="flex-1 p-6 overflow-y-auto">
+        <div className="flex-1 p-4 sm:p-5 overflow-x-auto overflow-y-auto">
           {loadingLeads && leads.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-neutral-400">
               <RefreshCw className="w-6 h-6 animate-spin mb-2" />
@@ -163,14 +199,16 @@ export default function App() {
             </div>
           ) : activeTab === 'kanban' ? (
             <KanbanBoard
-              leads={leads}
+              leads={displayedLeads}
+              tags={tags}
               onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
               onMoveColumn={handleUpdateLeadColumn}
               onShowToast={showToast}
             />
           ) : (
             <AllLeadsTable
-              leads={leads}
+              leads={displayedLeads}
+              tags={tags}
               onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
               onUpdateColumn={handleUpdateLeadColumn}
               onDeleteLead={handleDeleteLead}
@@ -185,8 +223,20 @@ export default function App() {
         isOpen={!!selectedLeadForDetail}
         onClose={() => setSelectedLeadForDetail(null)}
         lead={selectedLeadForDetail}
+        allLeads={leads}
+        onSelectLead={(nextLead) => setSelectedLeadForDetail(nextLead)}
+        tags={tags}
+        onOpenTagsModal={() => setIsTagsModalOpen(true)}
         onAddCallLog={handleAddCallLog}
         onUpdateColumn={handleUpdateLeadColumn}
+        onShowToast={showToast}
+      />
+
+      <TagManagerModal
+        isOpen={isTagsModalOpen}
+        onClose={() => setIsTagsModalOpen(false)}
+        tags={tags}
+        onRefreshTags={fetchTags}
         onShowToast={showToast}
       />
 
@@ -202,3 +252,4 @@ export default function App() {
     </div>
   );
 }
+

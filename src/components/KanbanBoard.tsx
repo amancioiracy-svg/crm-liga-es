@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Lead, PIPELINE_COLUMNS, ColumnStatus } from '../types';
+import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
 import { KanbanCard } from './KanbanCard';
 
 interface KanbanBoardProps {
   leads: Lead[];
+  tags?: CustomTag[];
   onOpenDetails: (lead: Lead) => void;
   onMoveColumn: (leadId: string, newColumn: ColumnStatus) => void;
   onShowToast: (msg: string) => void;
@@ -11,6 +12,7 @@ interface KanbanBoardProps {
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   leads,
+  tags = [],
   onOpenDetails,
   onMoveColumn,
   onShowToast
@@ -46,8 +48,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   };
 
   return (
-    <div className="w-full overflow-x-auto pb-4">
-      <div className="flex gap-3 min-w-[1440px] items-start">
+    <div className="w-full overflow-x-auto pb-6 pt-1">
+      <div className="inline-flex gap-3.5 min-w-max items-start">
         {PIPELINE_COLUMNS.map((colName) => {
           const colLeads = leads.filter((l) => l.columnStatus === colName);
           const isOver = dragOverColumn === colName;
@@ -58,7 +60,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               onDragOver={(e) => handleDragOver(e, colName)}
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, colName)}
-              className={`flex-1 min-w-[210px] max-w-[240px] rounded-xl p-2.5 transition-colors duration-150 flex flex-col min-h-[500px] ${
+              className={`w-72 min-w-[260px] max-w-[280px] shrink-0 rounded-xl p-2.5 transition-colors duration-150 flex flex-col min-h-[520px] ${
                 isOver
                   ? 'bg-blue-50/80 border-2 border-dashed border-blue-400'
                   : 'bg-neutral-100/70 border border-neutral-200/60'
@@ -91,6 +93,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     >
                       <KanbanCard
                         lead={lead}
+                        tags={tags}
                         onOpenDetails={onOpenDetails}
                         onMoveColumn={onMoveColumn}
                         onShowToast={onShowToast}

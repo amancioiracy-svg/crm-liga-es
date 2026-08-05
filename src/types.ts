@@ -19,26 +19,23 @@ export const PIPELINE_COLUMNS: ColumnStatus[] = [
   'Recusado'
 ];
 
-export type CallTag = 
-  | 'Atendeu'
-  | 'Não Atendeu'
-  | 'Caixa Postal'
-  | 'Ocupado'
-  | 'Pediu para retornar';
+export interface CustomTag {
+  id: string;
+  name: string;
+  color: string;
+  bgColor: string;
+  createdAt?: string;
+}
 
-export const CALL_TAGS: CallTag[] = [
-  'Atendeu',
-  'Não Atendeu',
-  'Caixa Postal',
-  'Ocupado',
-  'Pediu para retornar'
-];
+export type CallTag = string;
 
 export interface CallLog {
   id: string;
   leadId: string;
-  tag: CallTag;
+  tag: string;
   comment: string;
+  durationSeconds?: number;
+  followUpAt?: string;
   createdAt: string;
 }
 
@@ -52,6 +49,8 @@ export interface Lead {
   updatedAt: string;
   callCount?: number;
   lastCallAt?: string;
+  lastCallTag?: string;
+  nextFollowUpAt?: string;
   calls?: CallLog[];
 }
 
@@ -61,3 +60,4 @@ export interface ImportResult {
   skippedDuplicates: number;
   errors: string[];
 }
+
