@@ -396,7 +396,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                       </span>
 
                       <button
-                        onClick={() => window.open(getWhatsAppUrl(lead.phoneNumber, lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined), 'crm_whatsapp_web')}
+                        onClick={() => window.open(getWhatsAppUrl(lead.phoneNumber, lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined), 'whatsapp')}
                         className="p-1.5 rounded text-emerald-600 hover:bg-emerald-50"
                         title="Abrir WhatsApp Web (Reaproveita Aba)"
                       >

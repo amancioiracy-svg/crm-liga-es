@@ -257,7 +257,7 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
                       <button
                         onClick={() => {
                           const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
-                          window.open(getWhatsAppUrl(lead.phoneNumber, msgText), 'crm_whatsapp_web');
+                          window.open(getWhatsAppUrl(lead.phoneNumber, msgText), 'whatsapp');
                         }}
                         className="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-colors"
                         title="Abrir no WhatsApp Web (reaproveita aba)"

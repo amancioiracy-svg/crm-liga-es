@@ -299,7 +299,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     handleStartCall();
                     const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
                     const wa = getWhatsAppUrl(lead.phoneNumber, msgText);
-                    window.open(wa, 'crm_whatsapp_web');
+                    window.open(wa, 'whatsapp');
                   }}
                   className="text-emerald-600 hover:underline font-medium"
                 >

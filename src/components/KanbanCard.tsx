@@ -67,7 +67,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
     e.stopPropagation();
     const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
     const waUrl = getWhatsAppUrl(lead.phoneNumber, msgText);
-    window.open(waUrl, 'crm_whatsapp_web');
+    window.open(waUrl, 'whatsapp');
   };
 
   const handleMoveLeft = (e: React.MouseEvent) => {
