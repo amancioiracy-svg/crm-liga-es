@@ -201,12 +201,21 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
 
                     <td className="py-3 px-3">
                       {lead.lastCallTag ? (
-                        <span
-                          style={getTagStyle(lead.lastCallTag)}
-                          className="px-2 py-0.5 rounded text-[10px] font-semibold border border-black/5"
-                        >
-                          {lead.lastCallTag}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {lead.lastCallTag.split(',').map((tName, i) => {
+                            const trimmed = tName.trim();
+                            if (!trimmed) return null;
+                            return (
+                              <span
+                                key={i}
+                                style={getTagStyle(trimmed)}
+                                className="px-2 py-0.5 rounded text-[10px] font-semibold border border-black/5"
+                              >
+                                {trimmed}
+                              </span>
+                            );
+                          })}
+                        </div>
                       ) : (
                         <span className="text-neutral-300 italic text-[11px]">—</span>
                       )}

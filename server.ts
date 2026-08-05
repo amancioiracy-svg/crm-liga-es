@@ -43,91 +43,105 @@ const memoryTagsMap = new Map<string, CustomTag>(
 );
 
 async function initDatabase(retries = 5, delayMs = 3000) {
-  const dbUrl = process.env.DATABASE_URL?.trim();
+  const dbUrl = (
+    process.env.DATABASE_URL ||
+    process.env.DATABASE_PRIVATE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRESQL_URL ||
+    process.env.DATABASE_PUBLIC_URL ||
+    ''
+  ).trim();
+
   if (!dbUrl) {
-    console.log('ℹ️ No DATABASE_URL environment variable set. Operating in in-memory mode.');
+    console.log('ℹ️ Nenhuma variável de banco PostgreSQL encontrada (DATABASE_URL, POSTGRES_URL, etc.). Executando em modo in-memory.');
     usePostgres = false;
     return;
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      console.log(`[Database] Attempting connection to PostgreSQL (attempt ${attempt}/${retries})...`);
-      
-      const isInternal = dbUrl.includes('railway.internal') || dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
-      const sslConfig = isInternal ? false : { rejectUnauthorized: false };
+    // Try SSL configs: first with rejectUnauthorized: false, then ssl: false if internal
+    const sslConfigs = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1')
+      ? [false]
+      : [{ rejectUnauthorized: false }, false];
 
-      const pool = new pg.Pool({
-        connectionString: dbUrl,
-        ssl: sslConfig,
-        connectionTimeoutMillis: 5000,
-      });
+    for (const sslConfig of sslConfigs) {
+      try {
+        console.log(`[Database] Tentando conexão ao PostgreSQL (${attempt}/${retries}, ssl: ${JSON.stringify(sslConfig)})...`);
 
-      pool.on('error', (err) => {
-        console.error('Unexpected error on idle PostgreSQL client:', err);
-      });
+        const pool = new pg.Pool({
+          connectionString: dbUrl,
+          ssl: sslConfig,
+          connectionTimeoutMillis: 8000,
+        });
 
-      const client = await pool.connect();
-      
-      // Auto-create tables if they don't exist
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS leads (
-          id VARCHAR(255) PRIMARY KEY,
-          name VARCHAR(255) NOT NULL,
-          phone_number VARCHAR(100) NOT NULL,
-          public_url TEXT,
-          column_status VARCHAR(100) NOT NULL DEFAULT 'Leads',
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
+        pool.on('error', (err) => {
+          console.error('Erro no cliente PostgreSQL idle:', err);
+        });
 
-        CREATE TABLE IF NOT EXISTS calls (
-          id VARCHAR(255) PRIMARY KEY,
-          lead_id VARCHAR(255) NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-          tag VARCHAR(100) NOT NULL,
-          comment TEXT,
-          duration_seconds INT DEFAULT 0,
-          follow_up_at TIMESTAMP WITH TIME ZONE,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
-        ALTER TABLE calls ADD COLUMN IF NOT EXISTS duration_seconds INT DEFAULT 0;
-        ALTER TABLE calls ADD COLUMN IF NOT EXISTS follow_up_at TIMESTAMP WITH TIME ZONE;
-        ALTER TABLE leads ADD COLUMN IF NOT EXISTS next_follow_up_at TIMESTAMP WITH TIME ZONE;
+        const client = await pool.connect();
 
-        CREATE TABLE IF NOT EXISTS custom_tags (
-          id VARCHAR(255) PRIMARY KEY,
-          name VARCHAR(255) UNIQUE NOT NULL,
-          color VARCHAR(100) NOT NULL,
-          bg_color VARCHAR(100) NOT NULL,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-
-      // Seed default tags if table is empty
-      const tagCountRes = await client.query(`SELECT COUNT(*)::int AS count FROM custom_tags`);
-      if (tagCountRes.rows[0].count === 0) {
-        for (const t of DEFAULT_CUSTOM_TAGS) {
-          await client.query(
-            `INSERT INTO custom_tags (id, name, color, bg_color) VALUES ($1, $2, $3, $4) ON CONFLICT (name) DO NOTHING`,
-            [t.id, t.name, t.color, t.bgColor]
+        // Auto-create tables if they don't exist & run migrations
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS leads (
+            id VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            phone_number VARCHAR(100) NOT NULL,
+            public_url TEXT,
+            column_status VARCHAR(100) NOT NULL DEFAULT 'Leads',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
-        }
-      }
 
-      client.release();
-      pgPool = pool;
-      usePostgres = true;
-      console.log('✅ PostgreSQL connected and schema verified successfully.');
-      return;
-    } catch (err) {
-      console.warn(`⚠️ PostgreSQL connection attempt ${attempt} failed:`, (err as Error).message);
-      if (attempt < retries) {
-        await new Promise((res) => setTimeout(res, delayMs));
+          CREATE TABLE IF NOT EXISTS calls (
+            id VARCHAR(255) PRIMARY KEY,
+            lead_id VARCHAR(255) NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+            tag VARCHAR(100) NOT NULL,
+            comment TEXT,
+            duration_seconds INT DEFAULT 0,
+            follow_up_at TIMESTAMP WITH TIME ZONE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+
+          ALTER TABLE calls ADD COLUMN IF NOT EXISTS duration_seconds INT DEFAULT 0;
+          ALTER TABLE calls ADD COLUMN IF NOT EXISTS follow_up_at TIMESTAMP WITH TIME ZONE;
+          ALTER TABLE leads ADD COLUMN IF NOT EXISTS next_follow_up_at TIMESTAMP WITH TIME ZONE;
+
+          CREATE TABLE IF NOT EXISTS custom_tags (
+            id VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            color VARCHAR(100) NOT NULL,
+            bg_color VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+
+        // Seed default tags if table is empty
+        const tagCountRes = await client.query(`SELECT COUNT(*)::int AS count FROM custom_tags`);
+        if (tagCountRes.rows[0].count === 0) {
+          for (const t of DEFAULT_CUSTOM_TAGS) {
+            await client.query(
+              `INSERT INTO custom_tags (id, name, color, bg_color) VALUES ($1, $2, $3, $4) ON CONFLICT (name) DO NOTHING`,
+              [t.id, t.name, t.color, t.bgColor]
+            );
+          }
+        }
+
+        client.release();
+        pgPool = pool;
+        usePostgres = true;
+        console.log('✅ PostgreSQL conectado com sucesso e tabelas verificadas.');
+        return;
+      } catch (err: any) {
+        console.warn(`⚠️ Tentativa de conexão ao PostgreSQL falhou com SSL ${JSON.stringify(sslConfig)}:`, err.message);
       }
+    }
+
+    if (attempt < retries) {
+      await new Promise((res) => setTimeout(res, delayMs));
     }
   }
 
-  console.warn('⚠️ All PostgreSQL connection attempts failed. Falling back to in-memory mode.');
+  console.warn('⚠️ Todas as tentativas de conexão ao PostgreSQL falharam. Operando em modo in-memory.');
   usePostgres = false;
 }
 
@@ -153,7 +167,7 @@ app.get('/api/leads', async (req, res) => {
           l.name,
           l.phone_number AS "phoneNumber",
           l.public_url AS "publicUrl",
-          l.column_status AS "columnStatus",
+          COALESCE(l.column_status, 'Leads') AS "columnStatus",
           l.next_follow_up_at AS "nextFollowUpAt",
           l.created_at AS "createdAt",
           l.updated_at AS "updatedAt",
@@ -166,7 +180,7 @@ app.get('/api/leads', async (req, res) => {
           ) AS "lastCallTag"
         FROM leads l
         LEFT JOIN calls c ON l.id = c.lead_id
-        GROUP BY l.id
+        GROUP BY l.id, l.name, l.phone_number, l.public_url, l.column_status, l.next_follow_up_at, l.created_at, l.updated_at
         ORDER BY l.created_at DESC
       `);
       return res.json(result.rows);

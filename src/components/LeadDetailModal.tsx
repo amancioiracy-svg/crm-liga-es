@@ -44,7 +44,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onUpdateColumn,
   onShowToast
 }) => {
-  const [selectedTag, setSelectedTag] = useState<string>('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [comment, setComment] = useState('');
   const [selectedColumn, setSelectedColumn] = useState<ColumnStatus>('Leads');
   const [calls, setCalls] = useState<CallLog[]>([]);
@@ -60,8 +60,8 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [followUpDateTime, setFollowUpDateTime] = useState<string>('');
 
   useEffect(() => {
-    if (tags.length > 0 && !selectedTag) {
-      setSelectedTag(tags[0].name);
+    if (tags.length > 0 && selectedTags.length === 0) {
+      setSelectedTags([tags[0].name]);
     }
   }, [tags]);
 
@@ -148,10 +148,22 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     setFollowUpDateTime(localISOTime);
   };
 
+  const handleToggleTag = (tagName: string) => {
+    if (selectedTags.includes(tagName)) {
+      if (selectedTags.length > 1) {
+        setSelectedTags(selectedTags.filter((t) => t !== tagName));
+      } else {
+        onShowToast('Selecione pelo menos uma etiqueta para a ligação.');
+      }
+    } else {
+      setSelectedTags([...selectedTags, tagName]);
+    }
+  };
+
   const saveCallLog = async (closeModalAfter = true, advanceToNext = false) => {
     if (!lead) return;
 
-    const tagToUse = selectedTag || (tags[0]?.name || 'Atendeu');
+    const tagToUse = selectedTags.length > 0 ? selectedTags.join(', ') : (tags[0]?.name || 'Atendeu');
     const finalDuration = timerSeconds;
     const finalFollowUp = followUpDateTime ? new Date(followUpDateTime).toISOString() : undefined;
 
@@ -436,28 +448,29 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               <form onSubmit={handleSubmitCallForm} className="space-y-3">
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                    Resultado / Etiqueta da Ligação *
+                    Resultado / Etiqueta da Ligação * <span className="text-[10px] text-neutral-400 font-normal">(Você pode selecionar mais de uma tag)</span>
                   </label>
                   
                   <div className="flex flex-wrap gap-1.5">
                     {tags.map((t) => {
-                      const isSelected = (selectedTag || tags[0]?.name) === t.name;
+                      const isSelected = selectedTags.includes(t.name);
                       return (
                         <button
                           type="button"
                           key={t.id}
-                          onClick={() => setSelectedTag(t.name)}
+                          onClick={() => handleToggleTag(t.name)}
                           style={
                             isSelected
                               ? { backgroundColor: t.bgColor, color: t.color, borderColor: t.color }
                               : undefined
                           }
-                          className={`text-xs px-2.5 py-1 rounded-md border transition-all ${
+                          className={`text-xs px-2.5 py-1 rounded-md border transition-all inline-flex items-center gap-1 ${
                             isSelected
-                              ? 'font-bold shadow-2xs scale-102 ring-1 ring-black/10'
+                              ? 'font-bold shadow-2xs scale-102 ring-2 ring-black/10'
                               : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:bg-neutral-100'
                           }`}
                         >
+                          {isSelected ? '✓ ' : '+ '}
                           {t.name}
                         </button>
                       );
@@ -609,20 +622,23 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               ) : (
                 <div className="space-y-2.5">
                   {calls.map((c) => {
-                    const tagStyle = getTagStyle(c.tag);
+                    const cTags = c.tag ? c.tag.split(',').map((t) => t.trim()).filter(Boolean) : [];
                     return (
                       <div
                         key={c.id}
                         className="p-3 bg-neutral-50 rounded-lg border border-neutral-200/70 text-xs"
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <div className="flex items-center gap-2">
-                            <span
-                              style={tagStyle}
-                              className="px-2 py-0.5 rounded text-[10px] font-semibold border border-black/5"
-                            >
-                              {c.tag}
-                            </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {cTags.map((tName, idx) => (
+                              <span
+                                key={idx}
+                                style={getTagStyle(tName)}
+                                className="px-2 py-0.5 rounded text-[10px] font-semibold border border-black/5"
+                              >
+                                {tName}
+                              </span>
+                            ))}
 
                             {c.durationSeconds ? (
                               <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-200/80 px-1.5 py-0.2 rounded font-mono">

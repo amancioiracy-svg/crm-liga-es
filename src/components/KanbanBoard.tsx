@@ -51,7 +51,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     <div className="w-full overflow-x-auto pb-6 pt-1">
       <div className="inline-flex gap-3.5 min-w-max items-start">
         {PIPELINE_COLUMNS.map((colName) => {
-          const colLeads = leads.filter((l) => l.columnStatus === colName);
+          const colLeads = leads.filter((l) => {
+            const matchedCol = PIPELINE_COLUMNS.includes(l.columnStatus) ? l.columnStatus : 'Leads';
+            return matchedCol === colName;
+          });
           const isOver = dragOverColumn === colName;
 
           return (

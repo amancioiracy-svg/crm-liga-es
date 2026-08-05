@@ -34,6 +34,12 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
     return { color: '#374151', backgroundColor: '#f3f4f6' };
   };
 
+  const getTagsList = (tagStr?: string): string[] => {
+    if (!tagStr) return [];
+    return tagStr.split(',').map(t => t.trim()).filter(Boolean);
+  };
+  const leadTagsList = getTagsList(lead.lastCallTag);
+
   // 1. Copiar URL (dithoSitesMetadata.publicUrl)
   const handleCopyUrl = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -141,23 +147,28 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           </button>
         </div>
 
-        {/* Número de Telefone Bruto & Tag da Última Ligação */}
+        {/* Número de Telefone Bruto */}
         <div className="flex items-center justify-between gap-1 mb-2">
           <p className="text-[11px] font-mono text-neutral-500 flex items-center gap-1 min-w-0 truncate">
             <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
             <span className="truncate">{lead.phoneNumber}</span>
           </p>
-
-          {lead.lastCallTag && (
-            <span
-              style={getTagStyle(lead.lastCallTag)}
-              className="text-[9px] font-semibold px-1.5 py-0.5 rounded border border-black/5 shrink-0 truncate max-w-[110px]"
-              title={`Última ligação: ${lead.lastCallTag}`}
-            >
-              {lead.lastCallTag}
-            </span>
-          )}
         </div>
+
+        {/* Exibição Visual de TODAS as Etiquetas (Tags) do Cliente */}
+        {leadTagsList.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 mb-2">
+            {leadTagsList.map((tName, i) => (
+              <span
+                key={i}
+                style={getTagStyle(tName)}
+                className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded border border-black/5 shrink-0"
+              >
+                🏷️ {tName}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Tag do site se houver */}
         {lead.publicUrl && (

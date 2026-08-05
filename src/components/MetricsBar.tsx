@@ -13,15 +13,15 @@ interface CallLogItem {
 interface MetricsBarProps {
   leads: Lead[];
   tags: CustomTag[];
-  selectedTagFilter: string;
-  onTagFilterChange: (tag: string) => void;
+  selectedTagFilters: string[];
+  onTagFilterChange: (tags: string[]) => void;
   onShowToast: (msg: string) => void;
 }
 
 export const MetricsBar: React.FC<MetricsBarProps> = ({
   leads,
   tags,
-  selectedTagFilter,
+  selectedTagFilters,
   onTagFilterChange,
   onShowToast
 }) => {
@@ -188,35 +188,73 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
         </div>
       </div>
 
-      {/* Barra de Filtros & Exportação CSV */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-neutral-100">
-        {/* Filtro por Etiqueta de Ligação */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-3.5 h-3.5 text-neutral-500" />
-          <span className="text-xs font-semibold text-neutral-700">Filtrar por Etiqueta:</span>
-          
-          <select
-            value={selectedTagFilter}
-            onChange={(e) => onTagFilterChange(e.target.value)}
-            className="text-xs bg-white border border-neutral-300 rounded-lg px-3 py-1.5 font-medium text-neutral-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
-          >
-            <option value="ALL">Todas as Etiquetas ({leads.length} leads)</option>
-            {tags.map((t) => {
-              const count = leads.filter((l) => l.lastCallTag === t.name).length;
-              return (
-                <option key={t.id} value={t.name}>
-                  🏷️ {t.name} ({count} leads)
-                </option>
-              );
-            })}
-          </select>
+      {/* Barra de Filtros por Múltiplas Etiquetas & Exportação CSV */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-neutral-100">
+        {/* Filtro Interativo por Etiquetas (Seleção Múltipla com Cores) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 text-xs font-semibold text-neutral-700 mr-1">
+            <Filter className="w-3.5 h-3.5 text-neutral-500" />
+            <span>Filtro por Etiquetas:</span>
+          </div>
 
-          {selectedTagFilter !== 'ALL' && (
+          <button
+            type="button"
+            onClick={() => onTagFilterChange([])}
+            className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
+              selectedTagFilters.length === 0
+                ? 'bg-neutral-900 text-white border-neutral-900 font-bold shadow-2xs'
+                : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
+            }`}
+          >
+            Todas ({leads.length})
+          </button>
+
+          {tags.map((t) => {
+            const isSelected = selectedTagFilters.includes(t.name);
+            const count = leads.filter((l) => {
+              if (!l.lastCallTag) return false;
+              return l.lastCallTag.split(',').map((x) => x.trim()).includes(t.name);
+            }).length;
+
+            const toggleTag = () => {
+              if (isSelected) {
+                onTagFilterChange(selectedTagFilters.filter((name) => name !== t.name));
+              } else {
+                onTagFilterChange([...selectedTagFilters, t.name]);
+              }
+            };
+
+            return (
+              <button
+                type="button"
+                key={t.id}
+                onClick={toggleTag}
+                style={
+                  isSelected
+                    ? { backgroundColor: t.bgColor, color: t.color, borderColor: t.color }
+                    : undefined
+                }
+                className={`text-xs px-2.5 py-1 rounded-lg border transition-all inline-flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'font-bold shadow-2xs scale-102 ring-2 ring-black/10'
+                    : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
+                }`}
+              >
+                <span>{isSelected ? '✓' : '🏷️'}</span>
+                <span>{t.name}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-black/10' : 'bg-neutral-100 text-neutral-500'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+
+          {selectedTagFilters.length > 0 && (
             <button
-              onClick={() => onTagFilterChange('ALL')}
-              className="text-[11px] text-blue-600 hover:underline font-medium ml-1"
+              onClick={() => onTagFilterChange([])}
+              className="text-[11px] text-rose-600 hover:underline font-semibold ml-1"
             >
-              Limpar Filtro
+              Limpar ({selectedTagFilters.length})
             </button>
           )}
         </div>

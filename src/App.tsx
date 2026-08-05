@@ -15,7 +15,7 @@ export default function App() {
   const [tags, setTags] = useState<CustomTag[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(true);
   const [activeTab, setActiveTab] = useState<'kanban' | 'table'>('kanban');
-  const [selectedTagFilter, setSelectedTagFilter] = useState<string>('ALL');
+  const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
   
   // Modals & Toasts
   const [selectedLeadForDetail, setSelectedLeadForDetail] = useState<Lead | null>(null);
@@ -138,10 +138,12 @@ export default function App() {
     }
   };
 
-  // Filter leads by selected tag
+  // Filter leads by selected tags
   const displayedLeads = leads.filter((l) => {
-    if (selectedTagFilter === 'ALL') return true;
-    return l.lastCallTag === selectedTagFilter;
+    if (selectedTagFilters.length === 0) return true;
+    if (!l.lastCallTag) return false;
+    const lTags = l.lastCallTag.split(',').map((t) => t.trim());
+    return selectedTagFilters.some((fTag) => lTags.includes(fTag));
   });
 
   return (
@@ -166,7 +168,7 @@ export default function App() {
             </h2>
             <p className="text-[11px] text-neutral-500">
               {displayedLeads.length} de {leads.length} lead(s) exibido(s)
-              {selectedTagFilter !== 'ALL' && ` (filtrado por etiqueta "${selectedTagFilter}")`}
+              {selectedTagFilters.length > 0 && ` (filtrado por ${selectedTagFilters.length} etiqueta(s): ${selectedTagFilters.join(', ')})`}
             </p>
           </div>
 
@@ -185,8 +187,8 @@ export default function App() {
         <MetricsBar
           leads={leads}
           tags={tags}
-          selectedTagFilter={selectedTagFilter}
-          onTagFilterChange={(tag) => setSelectedTagFilter(tag)}
+          selectedTagFilters={selectedTagFilters}
+          onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
           onShowToast={showToast}
         />
 
