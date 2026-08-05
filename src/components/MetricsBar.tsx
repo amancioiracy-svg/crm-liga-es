@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Lead, CustomTag } from '../types';
-import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Filter, RefreshCw } from 'lucide-react';
+import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Filter, RefreshCw, ChevronDown, Check, X } from 'lucide-react';
 
 interface CallLogItem {
   id: string;
@@ -28,10 +28,22 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
   const [calls, setCalls] = useState<CallLogItem[]>([]);
   const [loadingCalls, setLoadingCalls] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchCalls();
   }, [leads]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsTagDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const fetchCalls = async () => {
     setLoadingCalls(true);
@@ -189,73 +201,125 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
       </div>
 
       {/* Barra de Filtros por Múltiplas Etiquetas & Exportação CSV */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-neutral-100">
-        {/* Filtro Interativo por Etiquetas (Seleção Múltipla com Cores) */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-xs font-semibold text-neutral-700 mr-1">
-            <Filter className="w-3.5 h-3.5 text-neutral-500" />
-            <span>Filtro por Etiquetas:</span>
+      <div className="flex items-center justify-between gap-3 pt-2 border-t border-neutral-100">
+        {/* Menu Dropdown de Seleção Múltipla de Etiquetas */}
+        <div className="relative" ref={dropdownRef}>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsTagDropdownOpen(!isTagDropdownOpen)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-neutral-800 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 shadow-2xs transition-all"
+            >
+              <Filter className="w-3.5 h-3.5 text-neutral-500" />
+              <span>
+                {selectedTagFilters.length === 0
+                  ? `Todas as Etiquetas (${leads.length} leads)`
+                  : `${selectedTagFilters.length} etiqueta(s) selecionada(s)`}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-neutral-400 transition-transform ${isTagDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {selectedTagFilters.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onTagFilterChange([])}
+                  className="text-[11px] text-rose-600 hover:text-rose-700 hover:underline font-semibold flex items-center gap-0.5"
+                >
+                  <X className="w-3 h-3" />
+                  Limpar filtro
+                </button>
+              </div>
+            )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => onTagFilterChange([])}
-            className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
-              selectedTagFilters.length === 0
-                ? 'bg-neutral-900 text-white border-neutral-900 font-bold shadow-2xs'
-                : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
-            }`}
-          >
-            Todas ({leads.length})
-          </button>
-
-          {tags.map((t) => {
-            const isSelected = selectedTagFilters.includes(t.name);
-            const count = leads.filter((l) => {
-              if (!l.lastCallTag) return false;
-              return l.lastCallTag.split(',').map((x) => x.trim()).includes(t.name);
-            }).length;
-
-            const toggleTag = () => {
-              if (isSelected) {
-                onTagFilterChange(selectedTagFilters.filter((name) => name !== t.name));
-              } else {
-                onTagFilterChange([...selectedTagFilters, t.name]);
-              }
-            };
-
-            return (
-              <button
-                type="button"
-                key={t.id}
-                onClick={toggleTag}
-                style={
-                  isSelected
-                    ? { backgroundColor: t.bgColor, color: t.color, borderColor: t.color }
-                    : undefined
-                }
-                className={`text-xs px-2.5 py-1 rounded-lg border transition-all inline-flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'font-bold shadow-2xs scale-102 ring-2 ring-black/10'
-                    : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
-                }`}
-              >
-                <span>{isSelected ? '✓' : '🏷️'}</span>
-                <span>{t.name}</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-black/10' : 'bg-neutral-100 text-neutral-500'}`}>
-                  {count}
+          {/* Menu Popover com Caixas de Seleção (Checkboxes) */}
+          {isTagDropdownOpen && (
+            <div className="absolute top-full left-0 mt-1.5 w-72 bg-white border border-neutral-200 rounded-xl shadow-xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-100">
+              <div className="px-2 py-1.5 border-b border-neutral-100 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                  Filtrar por Etiqueta
                 </span>
-              </button>
-            );
-          })}
+                {selectedTagFilters.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onTagFilterChange([])}
+                    className="text-[10px] text-rose-600 hover:underline font-semibold"
+                  >
+                    Desmarcar todas
+                  </button>
+                )}
+              </div>
 
-          {selectedTagFilters.length > 0 && (
-            <button
-              onClick={() => onTagFilterChange([])}
-              className="text-[11px] text-rose-600 hover:underline font-semibold ml-1"
-            >
-              Limpar ({selectedTagFilters.length})
-            </button>
+              <div className="max-h-60 overflow-y-auto space-y-0.5 py-1">
+                {/* Opção "Todas" */}
+                <label
+                  onClick={() => onTagFilterChange([])}
+                  className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                    selectedTagFilters.length === 0
+                      ? 'bg-neutral-100 text-neutral-900 font-semibold'
+                      : 'hover:bg-neutral-50 text-neutral-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedTagFilters.length === 0}
+                      onChange={() => onTagFilterChange([])}
+                      className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                    />
+                    <span>Todas as Etiquetas</span>
+                  </div>
+                  <span className="text-[10px] bg-neutral-200 text-neutral-600 px-1.5 py-0.2 rounded-full font-mono">
+                    {leads.length}
+                  </span>
+                </label>
+
+                <div className="border-t border-neutral-100 my-1"></div>
+
+                {/* Lista de Tags Cadastradas com Caixas de Seleção */}
+                {tags.map((t) => {
+                  const isChecked = selectedTagFilters.includes(t.name);
+                  const count = leads.filter((l) => {
+                    if (!l.lastCallTag) return false;
+                    return l.lastCallTag.split(',').map((x) => x.trim()).includes(t.name);
+                  }).length;
+
+                  const toggleTag = () => {
+                    if (isChecked) {
+                      onTagFilterChange(selectedTagFilters.filter((name) => name !== t.name));
+                    } else {
+                      onTagFilterChange([...selectedTagFilters, t.name]);
+                    }
+                  };
+
+                  return (
+                    <label
+                      key={t.id}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer hover:bg-neutral-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={toggleTag}
+                          className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 shrink-0"
+                        />
+                        <span
+                          style={{ backgroundColor: t.bgColor, color: t.color }}
+                          className="px-2 py-0.5 rounded text-[11px] font-semibold border border-black/5 truncate max-w-[150px]"
+                        >
+                          {t.name}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-neutral-400 font-mono shrink-0 ml-1">
+                        {count} {count === 1 ? 'lead' : 'leads'}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
 
