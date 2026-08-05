@@ -20,9 +20,13 @@ export function getQrTelLink(phone: string): string {
 }
 
 /**
- * URL do WhatsApp Web limpando caracteres especiais e adicionando DDI 55
+ * URL do WhatsApp Web limpando caracteres especiais, adicionando DDI 55 e mensagem opcional
  */
-export function getWhatsAppUrl(phone: string): string {
+export function getWhatsAppUrl(phone: string, text?: string): string {
   const digits = extractDigits(phone);
-  return `https://web.whatsapp.com/send?phone=55${digits}`;
+  let url = `https://web.whatsapp.com/send?phone=55${digits}`;
+  if (text) {
+    url += `&text=${encodeURIComponent(text)}`;
+  }
+  return url;
 }

@@ -1,9 +1,9 @@
 import React from 'react';
-import { LayoutGrid, Table, FileArchive, Sparkles, Tag } from 'lucide-react';
+import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3 } from 'lucide-react';
 
 interface SidebarProps {
-  activeTab: 'kanban' | 'table';
-  setActiveTab: (tab: 'kanban' | 'table') => void;
+  activeTab: 'kanban' | 'table' | 'dashboard';
+  setActiveTab: (tab: 'kanban' | 'table' | 'dashboard') => void;
   onOpenZipModal: () => void;
   onOpenTagsModal: () => void;
   onSeedSamples: () => void;
@@ -70,6 +70,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="flex items-center gap-2 min-w-0">
               <Table className="w-4 h-4 text-neutral-500 shrink-0" />
               <span className="truncate">Lista Geral</span>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === 'dashboard'
+                ? 'bg-neutral-100 text-neutral-900 font-semibold'
+                : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <BarChart3 className="w-4 h-4 text-blue-600 shrink-0" />
+              <span className="truncate">Dashboard Analítico</span>
             </div>
           </button>
         </div>

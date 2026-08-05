@@ -255,9 +255,12 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
                     <div className="flex items-center justify-end gap-1">
                       {/* WhatsApp */}
                       <button
-                        onClick={() => window.open(getWhatsAppUrl(lead.phoneNumber), '_blank')}
+                        onClick={() => {
+                          const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
+                          window.open(getWhatsAppUrl(lead.phoneNumber, msgText), 'crm_whatsapp_web');
+                        }}
                         className="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-colors"
-                        title="Abrir no WhatsApp Web"
+                        title="Abrir no WhatsApp Web (reaproveita aba)"
                       >
                         <MessageCircle className="w-3.5 h-3.5" />
                       </button>

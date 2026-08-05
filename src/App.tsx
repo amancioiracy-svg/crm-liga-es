@@ -3,6 +3,7 @@ import { Lead, ColumnStatus, CustomTag } from './types';
 import { Sidebar } from './components/Sidebar';
 import { KanbanBoard } from './components/KanbanBoard';
 import { AllLeadsTable } from './components/AllLeadsTable';
+import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { LeadDetailModal } from './components/LeadDetailModal';
 import { TagManagerModal } from './components/TagManagerModal';
 import { ZipUploadModal } from './components/ZipUploadModal';
@@ -14,7 +15,7 @@ export default function App() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tags, setTags] = useState<CustomTag[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(true);
-  const [activeTab, setActiveTab] = useState<'kanban' | 'table'>('kanban');
+  const [activeTab, setActiveTab] = useState<'kanban' | 'table' | 'dashboard'>('kanban');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
   
   // Modals & Toasts
@@ -164,7 +165,11 @@ export default function App() {
         <header className="bg-white border-b border-neutral-200 px-6 py-3 flex items-center justify-between shrink-0 shadow-2xs z-10">
           <div>
             <h2 className="text-sm font-bold text-neutral-900 tracking-tight">
-              {activeTab === 'kanban' ? 'Pipeline Kanban de Vendas' : 'Lista Completa de Leads'}
+              {activeTab === 'kanban'
+                ? 'Pipeline Kanban de Vendas'
+                : activeTab === 'table'
+                ? 'Lista Completa de Leads'
+                : 'Dashboard Analítico de Vendas'}
             </h2>
             <p className="text-[11px] text-neutral-500">
               {displayedLeads.length} de {leads.length} lead(s) exibido(s)
@@ -183,14 +188,16 @@ export default function App() {
           </div>
         </header>
 
-        {/* Barra de Métricas & Filtros de Vendas */}
-        <MetricsBar
-          leads={leads}
-          tags={tags}
-          selectedTagFilters={selectedTagFilters}
-          onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
-          onShowToast={showToast}
-        />
+        {/* Barra de Métricas & Filtros de Vendas (oculta no Dashboard para evitar duplicidade) */}
+        {activeTab !== 'dashboard' && (
+          <MetricsBar
+            leads={leads}
+            tags={tags}
+            selectedTagFilters={selectedTagFilters}
+            onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
+            onShowToast={showToast}
+          />
+        )}
 
         {/* View Content */}
         <div className="flex-1 p-4 sm:p-5 overflow-x-auto overflow-y-auto">
@@ -207,13 +214,20 @@ export default function App() {
               onMoveColumn={handleUpdateLeadColumn}
               onShowToast={showToast}
             />
-          ) : (
+          ) : activeTab === 'table' ? (
             <AllLeadsTable
               leads={displayedLeads}
               tags={tags}
               onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
               onUpdateColumn={handleUpdateLeadColumn}
               onDeleteLead={handleDeleteLead}
+              onShowToast={showToast}
+            />
+          ) : (
+            <AnalyticsDashboard
+              leads={leads}
+              tags={tags}
+              onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
               onShowToast={showToast}
             />
           )}

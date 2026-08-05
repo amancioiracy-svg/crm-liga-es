@@ -62,11 +62,12 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
     setTimeout(() => setCopiedPhone(false), 2000);
   };
 
-  // 3. WhatsApp Web (Abre WhatsApp Web sem caracteres especiais)
+  // 3. WhatsApp Web (Abre WhatsApp Web sem abrir várias abas)
   const handleOpenWhatsApp = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const waUrl = getWhatsAppUrl(lead.phoneNumber);
-    window.open(waUrl, '_blank', 'noopener,noreferrer');
+    const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
+    const waUrl = getWhatsAppUrl(lead.phoneNumber, msgText);
+    window.open(waUrl, 'crm_whatsapp_web');
   };
 
   const handleMoveLeft = (e: React.MouseEvent) => {

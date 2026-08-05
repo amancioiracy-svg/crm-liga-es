@@ -74,6 +74,12 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       setIsTimerRunning(false);
       setComment('');
       setFollowUpDateTime('');
+      // Clean reset tags for THIS lead
+      if (tags.length > 0) {
+        setSelectedTags([tags[0].name]);
+      } else {
+        setSelectedTags([]);
+      }
     }
   }, [lead]);
 
@@ -112,9 +118,23 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const currentLeadIndex = allLeads.findIndex((l) => l.id === lead.id);
   const nextLead = currentLeadIndex >= 0 && currentLeadIndex < allLeads.length - 1 ? allLeads[currentLeadIndex + 1] : null;
 
+  const getNextColumnForStartCall = (currentCol: ColumnStatus): ColumnStatus => {
+    if (currentCol === 'Leads') return 'Ligação 1';
+    if (currentCol === 'Ligação 1') return 'Ligação 2';
+    if (currentCol === 'Ligação 2') return 'Ligação 3';
+    if (currentCol === 'Ligação 3') return 'Ligação 4';
+    return currentCol;
+  };
+
   const handleStartCall = () => {
     setIsTimerRunning(true);
-    onShowToast('Cronômetro de ligação iniciado!');
+    const nextCol = getNextColumnForStartCall(selectedColumn);
+    if (nextCol !== selectedColumn) {
+      setSelectedColumn(nextCol);
+      onShowToast(`Ligação iniciada! Etapa avançada automaticamente para "${nextCol}".`);
+    } else {
+      onShowToast('Cronômetro de ligação iniciado!');
+    }
   };
 
   const handlePauseTimer = () => {
@@ -277,8 +297,9 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 <button
                   onClick={() => {
                     handleStartCall();
-                    const wa = getWhatsAppUrl(lead.phoneNumber);
-                    window.open(wa, '_blank');
+                    const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
+                    const wa = getWhatsAppUrl(lead.phoneNumber, msgText);
+                    window.open(wa, 'crm_whatsapp_web');
                   }}
                   className="text-emerald-600 hover:underline font-medium"
                 >
