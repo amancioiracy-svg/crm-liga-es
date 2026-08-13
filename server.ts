@@ -473,6 +473,293 @@ app.post('/api/upload-zip', upload.single('zipFile'), async (req, res) => {
   }
 });
 
+// Helper to map flexible status names to official ColumnStatus
+function mapToColumnStatus(rawStatus: any, defaultFallback: ColumnStatus = 'Recusado'): ColumnStatus {
+  if (!rawStatus || typeof rawStatus !== 'string') return defaultFallback;
+  const clean = rawStatus.toLowerCase().trim();
+
+  if (
+    clean.includes('nao fechado') ||
+    clean.includes('não fechado') ||
+    clean.includes('nao_fechado') ||
+    clean.includes('recusad') ||
+    clean.includes('desist') ||
+    clean.includes('perdido') ||
+    clean.includes('fora')
+  ) {
+    return 'Recusado';
+  }
+  if (
+    clean.includes('fechad') ||
+    clean.includes('ganho') ||
+    clean.includes('venda') ||
+    clean.includes('cliente')
+  ) {
+    return 'Fechado';
+  }
+  if (
+    clean.includes('interessad') ||
+    clean.includes('proposta') ||
+    clean.includes('quente') ||
+    clean.includes('oportunidade')
+  ) {
+    return 'Interessado';
+  }
+  if (
+    clean.includes('abordad') ||
+    clean.includes('contatad') ||
+    clean.includes('conversad') ||
+    clean.includes('ligacao 1') ||
+    clean.includes('ligação 1') ||
+    clean === '1'
+  ) {
+    return 'Ligação 1';
+  }
+  if (clean.includes('ligacao 2') || clean.includes('ligação 2') || clean === '2') {
+    return 'Ligação 2';
+  }
+  if (clean.includes('ligacao 3') || clean.includes('ligação 3') || clean === '3') {
+    return 'Ligação 3';
+  }
+  if (clean.includes('ligacao 4') || clean.includes('ligação 4') || clean === '4') {
+    return 'Ligação 4';
+  }
+  if (clean.includes('lead') || clean.includes('novo') || clean.includes('triagem')) {
+    return 'Leads';
+  }
+
+  // Check exact column match
+  const exact = PIPELINE_COLUMNS.find((col) => col.toLowerCase() === clean);
+  if (exact) return exact;
+
+  return defaultFallback;
+}
+
+// Helper to strip non-digits for phone matching
+function getOnlyDigits(str: string): string {
+  return str.replace(/\D/g, '');
+}
+
+// Flexible Batch Lead Status Update Endpoint via JSON
+app.post('/api/leads/batch-update', async (req, res) => {
+  try {
+    const { jsonPayload, defaultStatus = 'Recusado', addCallLog = true } = req.body;
+
+    if (!jsonPayload) {
+      return res.status(400).json({ error: 'Payload JSON é obrigatório.' });
+    }
+
+    let parsed: any = jsonPayload;
+    if (typeof jsonPayload === 'string') {
+      try {
+        parsed = JSON.parse(jsonPayload);
+      } catch (e: any) {
+        // Try stripping comments or trailing commas
+        try {
+          const cleanStr = jsonPayload
+            .replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*/g, '$1')
+            .replace(/,\s*([}\]])/g, '$1');
+          parsed = JSON.parse(cleanStr);
+        } catch (e2: any) {
+          return res.status(400).json({ error: `JSON inválido: ${e.message}` });
+        }
+      }
+    }
+
+    const fallbackCol = mapToColumnStatus(defaultStatus, 'Recusado');
+    const updateTasks: {
+      identifier: string;
+      targetStatus: ColumnStatus;
+      comment?: string;
+      tag?: string;
+    }[] = [];
+
+    // Parse various JSON schemas into standardized updateTasks array
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (typeof item === 'string') {
+          updateTasks.push({
+            identifier: item.trim(),
+            targetStatus: fallbackCol
+          });
+        } else if (item && typeof item === 'object') {
+          const identifier = String(
+            item.nome ||
+            item.name ||
+            item.lead ||
+            item.telefone ||
+            item.phone ||
+            item.phoneNumber ||
+            item.id ||
+            ''
+          ).trim();
+
+          if (identifier) {
+            const rawStat = item.status || item.estagio || item.coluna || item.state || item.situacao || item.situacaoWhatsApp;
+            const targetStatus = mapToColumnStatus(rawStat, fallbackCol);
+            const comment = String(item.observacao || item.comment || item.comentario || item.nota || '').trim();
+            const tag = String(item.tag || item.etiqueta || 'WhatsApp abordado').trim();
+            updateTasks.push({ identifier, targetStatus, comment, tag });
+          }
+        }
+      }
+    } else if (parsed && typeof parsed === 'object') {
+      // Check if it's an object with keys mapped to arrays e.g. { "não fechado": ["Lead 1", "Lead 2"], "interessado": ["Lead 3"] }
+      // Or object with a "leads" or "items" property
+      let targetArray = parsed.leads || parsed.data || parsed.items || parsed.clients;
+
+      if (Array.isArray(targetArray)) {
+        for (const item of targetArray) {
+          if (typeof item === 'string') {
+            updateTasks.push({ identifier: item.trim(), targetStatus: fallbackCol });
+          } else if (item && typeof item === 'object') {
+            const identifier = String(item.nome || item.name || item.lead || item.telefone || item.phone || item.id || '').trim();
+            if (identifier) {
+              const targetStatus = mapToColumnStatus(item.status || item.estagio || item.coluna, fallbackCol);
+              const comment = String(item.observacao || item.comment || item.comentario || item.nota || '').trim();
+              const tag = String(item.tag || item.etiqueta || 'WhatsApp abordado').trim();
+              updateTasks.push({ identifier, targetStatus, comment, tag });
+            }
+          }
+        }
+      } else {
+        // Treat keys of object as status names
+        for (const [key, val] of Object.entries(parsed)) {
+          const statusForKey = mapToColumnStatus(key, fallbackCol);
+          if (Array.isArray(val)) {
+            for (const subItem of val) {
+              if (typeof subItem === 'string') {
+                updateTasks.push({ identifier: subItem.trim(), targetStatus: statusForKey });
+              } else if (subItem && typeof subItem === 'object') {
+                const identifier = String(subItem.nome || subItem.name || subItem.telefone || subItem.phone || subItem.id || '').trim();
+                if (identifier) {
+                  const comment = String(subItem.observacao || subItem.comment || subItem.comentario || '').trim();
+                  updateTasks.push({ identifier, targetStatus: statusForKey, comment });
+                }
+              }
+            }
+          } else if (typeof val === 'string') {
+            // Key could be lead name and val status, or key status and val lead name
+            // Let's check if key looks like a status
+            const keyAsStatus = mapToColumnStatus(key, '' as any);
+            if (keyAsStatus) {
+              updateTasks.push({ identifier: val.trim(), targetStatus: keyAsStatus });
+            } else {
+              const valAsStatus = mapToColumnStatus(val, fallbackCol);
+              updateTasks.push({ identifier: key.trim(), targetStatus: valAsStatus });
+            }
+          }
+        }
+      }
+    }
+
+    if (updateTasks.length === 0) {
+      return res.status(400).json({ error: 'Nenhum lead ou identificador válido foi encontrado no JSON.' });
+    }
+
+    // Load existing leads from DB/memory to perform matching
+    let allLeads: Lead[] = [];
+    if (usePostgres && pgPool) {
+      const dbRes = await pgPool.query(`SELECT id, name, phone_number AS "phoneNumber", column_status AS "columnStatus" FROM leads`);
+      allLeads = dbRes.rows;
+    } else {
+      allLeads = Array.from(memoryLeadsMap.values());
+    }
+
+    const updatedLeadsList: { id: string; name: string; oldStatus: string; newStatus: string }[] = [];
+    const notFoundIdentifiers: string[] = [];
+
+    for (const task of updateTasks) {
+      const cleanIdent = task.identifier.toLowerCase().trim();
+      const digitsIdent = getOnlyDigits(task.identifier);
+
+      // Find matching lead
+      let matched = allLeads.find((l) => l.id.toLowerCase() === cleanIdent);
+
+      if (!matched && digitsIdent.length >= 8) {
+        matched = allLeads.find((l) => getOnlyDigits(l.phoneNumber).includes(digitsIdent) || digitsIdent.includes(getOnlyDigits(l.phoneNumber)));
+      }
+
+      if (!matched) {
+        matched = allLeads.find((l) => l.name.toLowerCase().trim() === cleanIdent);
+      }
+
+      if (!matched && cleanIdent.length >= 3) {
+        matched = allLeads.find((l) => {
+          const lName = l.name.toLowerCase().trim();
+          return lName.includes(cleanIdent) || cleanIdent.includes(lName);
+        });
+      }
+
+      if (matched) {
+        const oldStatus = matched.columnStatus;
+        const newStatus = task.targetStatus;
+
+        // Perform DB update
+        if (usePostgres && pgPool) {
+          await pgPool.query(`UPDATE leads SET column_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [newStatus, matched.id]);
+
+          if (addCallLog) {
+            const callId = `call-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+            const commentText = task.comment || `Atualizado em lote para "${newStatus}" via JSON.`;
+            const tagText = task.tag || 'Atualização via JSON';
+            await pgPool.query(
+              `INSERT INTO calls (id, lead_id, tag, comment, duration_seconds, created_at)
+               VALUES ($1, $2, $3, $4, 0, CURRENT_TIMESTAMP)`,
+              [callId, matched.id, tagText, commentText]
+            );
+          }
+        } else {
+          const memLead = memoryLeadsMap.get(matched.id);
+          if (memLead) {
+            memLead.columnStatus = newStatus;
+            memLead.updatedAt = new Date().toISOString();
+            memoryLeadsMap.set(matched.id, memLead);
+
+            if (addCallLog) {
+              const callId = `call-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+              const existingCalls = memoryCallLogsMap.get(matched.id) || [];
+              const newCall: CallLog = {
+                id: callId,
+                leadId: matched.id,
+                tag: task.tag || 'Atualização via JSON',
+                comment: task.comment || `Atualizado em lote para "${newStatus}" via JSON.`,
+                durationSeconds: 0,
+                createdAt: new Date().toISOString()
+              };
+              existingCalls.push(newCall);
+              memoryCallLogsMap.set(matched.id, existingCalls);
+              memLead.callCount = existingCalls.length;
+              memLead.lastCallAt = newCall.createdAt;
+              memLead.lastCallTag = newCall.tag;
+            }
+          }
+        }
+
+        updatedLeadsList.push({
+          id: matched.id,
+          name: matched.name,
+          oldStatus,
+          newStatus
+        });
+      } else {
+        notFoundIdentifiers.push(task.identifier);
+      }
+    }
+
+    return res.json({
+      totalProcessed: updateTasks.length,
+      updatedCount: updatedLeadsList.length,
+      notFoundCount: notFoundIdentifiers.length,
+      updatedLeads: updatedLeadsList,
+      notFoundIdentifiers
+    });
+  } catch (error: any) {
+    console.error('Error in batch update:', error);
+    res.status(500).json({ error: `Erro ao processar atualização via JSON: ${error.message}` });
+  }
+});
+
 // Batch API to import parsed leads array directly (avoiding payload size limits on huge ZIP uploads)
 app.post('/api/leads/batch', async (req, res) => {
   try {

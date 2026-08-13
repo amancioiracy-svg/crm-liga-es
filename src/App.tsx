@@ -7,6 +7,7 @@ import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { LeadDetailModal } from './components/LeadDetailModal';
 import { TagManagerModal } from './components/TagManagerModal';
 import { ZipUploadModal } from './components/ZipUploadModal';
+import { JsonBatchUpdateModal } from './components/JsonBatchUpdateModal';
 import { MetricsBar } from './components/MetricsBar';
 import { Toast } from './components/Toast';
 import { PhoneCall, Users, CheckCircle, RefreshCw } from 'lucide-react';
@@ -22,6 +23,7 @@ export default function App() {
   const [selectedLeadForDetail, setSelectedLeadForDetail] = useState<Lead | null>(null);
   const [isZipModalOpen, setIsZipModalOpen] = useState(false);
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
+  const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -196,6 +198,7 @@ export default function App() {
             selectedTagFilters={selectedTagFilters}
             onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
             onShowToast={showToast}
+            onOpenJsonBatchModal={() => setIsJsonModalOpen(true)}
           />
         )}
 
@@ -222,6 +225,7 @@ export default function App() {
               onUpdateColumn={handleUpdateLeadColumn}
               onDeleteLead={handleDeleteLead}
               onShowToast={showToast}
+              onOpenJsonBatchModal={() => setIsJsonModalOpen(true)}
             />
           ) : (
             <AnalyticsDashboard
@@ -260,6 +264,13 @@ export default function App() {
         isOpen={isZipModalOpen}
         onClose={() => setIsZipModalOpen(false)}
         onImportComplete={fetchLeads}
+        onShowToast={showToast}
+      />
+
+      <JsonBatchUpdateModal
+        isOpen={isJsonModalOpen}
+        onClose={() => setIsJsonModalOpen(false)}
+        onUpdateComplete={fetchLeads}
         onShowToast={showToast}
       />
 

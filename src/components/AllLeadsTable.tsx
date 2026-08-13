@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
-import { Search, Phone, ExternalLink, QrCode, Copy, Trash2, Eye, MessageCircle, Check, CalendarClock, AlertTriangle, Clock } from 'lucide-react';
+import { Search, Phone, ExternalLink, QrCode, Copy, Trash2, Eye, MessageCircle, Check, CalendarClock, AlertTriangle, Clock, FileCode } from 'lucide-react';
 import { getWhatsAppUrl } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
@@ -12,6 +12,7 @@ interface AllLeadsTableProps {
   onUpdateColumn: (leadId: string, newColumn: ColumnStatus) => void;
   onDeleteLead: (leadId: string) => void;
   onShowToast: (msg: string) => void;
+  onOpenJsonBatchModal?: () => void;
 }
 
 export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
@@ -20,7 +21,8 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
   onOpenDetails,
   onUpdateColumn,
   onDeleteLead,
-  onShowToast
+  onShowToast,
+  onOpenJsonBatchModal
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedColumnFilter, setSelectedColumnFilter] = useState<string>('ALL');
@@ -106,6 +108,18 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
               ))}
             </select>
           </div>
+
+          {onOpenJsonBatchModal && (
+            <button
+              type="button"
+              onClick={onOpenJsonBatchModal}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors"
+              title="Colar JSON para atualização rápida em lote"
+            >
+              <FileCode className="w-3.5 h-3.5" />
+              <span>Atualizar via JSON</span>
+            </button>
+          )}
         </div>
       </div>
 

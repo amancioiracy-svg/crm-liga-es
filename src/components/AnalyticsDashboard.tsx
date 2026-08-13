@@ -340,7 +340,6 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                   </div>
                   <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
                     <div
-                      style={{ backgroundColor: t.color }}
                       className="h-full rounded-full transition-all duration-500"
                       style={{
                         width: `${Math.max(t.pct, 4)}%`,

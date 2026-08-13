@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Lead, CustomTag } from '../types';
-import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Filter, RefreshCw, ChevronDown, Check, X } from 'lucide-react';
+import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Filter, RefreshCw, ChevronDown, Check, X, FileCode } from 'lucide-react';
 
 interface CallLogItem {
   id: string;
@@ -16,6 +16,7 @@ interface MetricsBarProps {
   selectedTagFilters: string[];
   onTagFilterChange: (tags: string[]) => void;
   onShowToast: (msg: string) => void;
+  onOpenJsonBatchModal: () => void;
 }
 
 export const MetricsBar: React.FC<MetricsBarProps> = ({
@@ -23,7 +24,8 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
   tags,
   selectedTagFilters,
   onTagFilterChange,
-  onShowToast
+  onShowToast,
+  onOpenJsonBatchModal
 }) => {
   const [calls, setCalls] = useState<CallLogItem[]>([]);
   const [loadingCalls, setLoadingCalls] = useState(false);
@@ -350,19 +352,31 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
           )}
         </div>
 
-        {/* Botão de Exportação para CSV */}
-        <button
-          onClick={handleExportCsv}
-          disabled={exportingCsv}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-all disabled:opacity-50"
-        >
-          {exportingCsv ? (
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Download className="w-3.5 h-3.5" />
-          )}
-          <span>Exportar Relatório (CSV)</span>
-        </button>
+        {/* Botões de Ação: Atualizar via JSON & Exportar CSV */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenJsonBatchModal}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-800 bg-white border border-neutral-300 hover:bg-neutral-50 rounded-lg shadow-2xs transition-all"
+            title="Colar JSON para atualizar status de múltiplos leads em lote"
+          >
+            <FileCode className="w-3.5 h-3.5 text-blue-600" />
+            <span>Atualização em Lote (JSON)</span>
+          </button>
+
+          <button
+            onClick={handleExportCsv}
+            disabled={exportingCsv}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-all disabled:opacity-50"
+          >
+            {exportingCsv ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Download className="w-3.5 h-3.5" />
+            )}
+            <span>Exportar Relatório (CSV)</span>
+          </button>
+        </div>
       </div>
     </div>
   );
