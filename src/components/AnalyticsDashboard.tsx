@@ -72,6 +72,8 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayCalls = calls.filter((c) => c.createdAt && c.createdAt.slice(0, 10) === todayStr);
 
+  const todayTotalSeconds = todayCalls.reduce((acc, c) => acc + (c.durationSeconds || 0), 0);
+
   const validDurations = calls.map((c) => c.durationSeconds || 0).filter((d) => d > 0);
   const totalSeconds = validDurations.reduce((acc, curr) => acc + curr, 0);
   const avgDuration = validDurations.length > 0 ? Math.round(totalSeconds / validDurations.length) : 0;
@@ -187,8 +189,8 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         </button>
       </div>
 
-      {/* Grid de 4 Cards Principais de KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Grid de 5 Cards Principais de KPIs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Card 1: Total de Leads */}
         <div className="bg-white border border-neutral-200/80 rounded-xl p-4 shadow-2xs space-y-2">
           <div className="flex items-center justify-between text-neutral-500 text-xs font-semibold uppercase tracking-wider">
@@ -218,7 +220,22 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           </div>
         </div>
 
-        {/* Card 3: Tempo Médio de Ligação */}
+        {/* Card 3: Tempo Falado Hoje */}
+        <div className="bg-white border border-blue-200 bg-blue-50/20 rounded-xl p-4 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between text-blue-700 text-xs font-semibold uppercase tracking-wider">
+            <span>Tempo Falado Hoje</span>
+            <Clock className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="text-2xl font-bold text-blue-900 leading-none font-mono">
+            {formatSeconds(todayTotalSeconds)}
+          </div>
+          <div className="text-[11px] text-neutral-500 flex items-center justify-between pt-1 border-t border-blue-100">
+            <span>Acumulado de Hoje:</span>
+            <span className="font-bold text-blue-700">{todayCalls.length} ligação(ões)</span>
+          </div>
+        </div>
+
+        {/* Card 4: Tempo Médio de Ligação */}
         <div className="bg-white border border-neutral-200/80 rounded-xl p-4 shadow-2xs space-y-2">
           <div className="flex items-center justify-between text-neutral-500 text-xs font-semibold uppercase tracking-wider">
             <span>Tempo Médio / Ligação</span>
@@ -233,7 +250,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           </div>
         </div>
 
-        {/* Card 4: Taxa de Conversão */}
+        {/* Card 5: Taxa de Conversão */}
         <div className="bg-white border border-neutral-200/80 rounded-xl p-4 shadow-2xs space-y-2">
           <div className="flex items-center justify-between text-neutral-500 text-xs font-semibold uppercase tracking-wider">
             <span>Taxa de Conversão</span>

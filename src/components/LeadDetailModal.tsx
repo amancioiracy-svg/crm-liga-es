@@ -55,6 +55,8 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   // Timer states
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [callStartTime, setCallStartTime] = useState<number | null>(null);
+  const [accumulatedSeconds, setAccumulatedSeconds] = useState(0);
 
   // Follow-up state
   const [followUpDateTime, setFollowUpDateTime] = useState<string>('');
@@ -65,36 +67,64 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     }
   }, [tags]);
 
-  // Reset states when lead changes
+  // Reset/restore states when lead changes
   useEffect(() => {
     if (lead) {
       setSelectedColumn(lead.columnStatus);
       fetchCallHistory(lead.id);
-      setTimerSeconds(0);
-      setIsTimerRunning(false);
       setComment('');
       setFollowUpDateTime('');
+
       // Clean reset tags for THIS lead
       if (tags.length > 0) {
         setSelectedTags([tags[0].name]);
       } else {
         setSelectedTags([]);
       }
-    }
-  }, [lead]);
 
-  // Timer interval effect
+      // Restore active/paused call timer from localStorage if exists for this lead
+      const savedCall = localStorage.getItem(`crm_timer_${lead.id}`);
+      if (savedCall) {
+        try {
+          const { startTime, accum, isRunning } = JSON.parse(savedCall);
+          setCallStartTime(startTime);
+          setAccumulatedSeconds(accum || 0);
+          setIsTimerRunning(Boolean(isRunning));
+
+          if (isRunning && startTime) {
+            const currentSec = (accum || 0) + Math.floor((Date.now() - startTime) / 1000);
+            setTimerSeconds(currentSec);
+          } else {
+            setTimerSeconds(accum || 0);
+          }
+        } catch (e) {
+          setCallStartTime(null);
+          setAccumulatedSeconds(0);
+          setTimerSeconds(0);
+          setIsTimerRunning(false);
+        }
+      } else {
+        setCallStartTime(null);
+        setAccumulatedSeconds(0);
+        setTimerSeconds(0);
+        setIsTimerRunning(false);
+      }
+    }
+  }, [lead?.id]);
+
+  // Real-time Timer Ticker (calculates exact seconds based on Date.now())
   useEffect(() => {
     let interval: any = null;
-    if (isTimerRunning) {
+    if (isTimerRunning && callStartTime) {
       interval = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
-      }, 1000);
-    } else if (!isTimerRunning && timerSeconds !== 0) {
-      clearInterval(interval);
+        const liveSeconds = accumulatedSeconds + Math.floor((Date.now() - callStartTime) / 1000);
+        setTimerSeconds(liveSeconds);
+      }, 250);
+    } else {
+      setTimerSeconds(accumulatedSeconds);
     }
     return () => clearInterval(interval);
-  }, [isTimerRunning, timerSeconds]);
+  }, [isTimerRunning, callStartTime, accumulatedSeconds]);
 
   const fetchCallHistory = async (leadId: string) => {
     setLoadingCalls(true);
@@ -127,7 +157,18 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   };
 
   const handleStartCall = () => {
+    const now = Date.now();
+    setCallStartTime(now);
     setIsTimerRunning(true);
+
+    if (lead) {
+      localStorage.setItem(`crm_timer_${lead.id}`, JSON.stringify({
+        startTime: now,
+        accum: accumulatedSeconds,
+        isRunning: true
+      }));
+    }
+
     const nextCol = getNextColumnForStartCall(selectedColumn);
     if (nextCol !== selectedColumn) {
       setSelectedColumn(nextCol);
@@ -138,12 +179,34 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   };
 
   const handlePauseTimer = () => {
-    setIsTimerRunning(false);
+    if (isTimerRunning && callStartTime) {
+      const added = Math.floor((Date.now() - callStartTime) / 1000);
+      const newAccum = accumulatedSeconds + added;
+      setAccumulatedSeconds(newAccum);
+      setTimerSeconds(newAccum);
+      setCallStartTime(null);
+      setIsTimerRunning(false);
+
+      if (lead) {
+        localStorage.setItem(`crm_timer_${lead.id}`, JSON.stringify({
+          startTime: null,
+          accum: newAccum,
+          isRunning: false
+        }));
+      }
+    } else {
+      setIsTimerRunning(false);
+    }
   };
 
   const handleResetTimer = () => {
     setIsTimerRunning(false);
+    setCallStartTime(null);
+    setAccumulatedSeconds(0);
     setTimerSeconds(0);
+    if (lead) {
+      localStorage.removeItem(`crm_timer_${lead.id}`);
+    }
   };
 
   const setPresetFollowUp = (preset: '1h' | '1d' | '2d' | '1w' | 'today17' | 'tomorrow9') => {
@@ -184,7 +247,14 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     if (!lead) return;
 
     const tagToUse = selectedTags.length > 0 ? selectedTags.join(', ') : (tags[0]?.name || 'Atendeu');
-    const finalDuration = timerSeconds;
+    
+    // Cálculo de Duração Exata com base no Timestamp de Início (Clock do Sistema)
+    let finalDuration = accumulatedSeconds;
+    if (isTimerRunning && callStartTime) {
+      finalDuration += Math.floor((Date.now() - callStartTime) / 1000);
+    }
+    if (finalDuration < 0) finalDuration = 0;
+
     const finalFollowUp = followUpDateTime ? new Date(followUpDateTime).toISOString() : undefined;
 
     setSubmittingCall(true);
@@ -200,14 +270,27 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
       if (advanceToNext && nextLead && onSelectLead) {
         onShowToast(`Ligação salva (${formattedTime})! Avançando para "${nextLead.name}"...`);
+        localStorage.removeItem(`crm_timer_${lead.id}`);
+        setCallStartTime(null);
+        setAccumulatedSeconds(0);
         setTimerSeconds(0);
         setFollowUpDateTime('');
         setComment('');
-        setIsTimerRunning(true); // Auto-start timer for next lead!
+
+        // Auto-start timer for next lead!
+        const now = Date.now();
+        localStorage.setItem(`crm_timer_${nextLead.id}`, JSON.stringify({
+          startTime: now,
+          accum: 0,
+          isRunning: true
+        }));
         onSelectLead(nextLead);
       } else {
         onShowToast(`Ligação registrada com sucesso! Duração: ${formattedTime}`);
         await fetchCallHistory(lead.id);
+        localStorage.removeItem(`crm_timer_${lead.id}`);
+        setCallStartTime(null);
+        setAccumulatedSeconds(0);
         setIsTimerRunning(false);
         setTimerSeconds(0);
         setComment('');

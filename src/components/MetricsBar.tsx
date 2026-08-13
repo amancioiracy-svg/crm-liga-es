@@ -67,6 +67,16 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
     return c.createdAt.slice(0, 10) === todayStr;
   });
 
+  const todayTotalSeconds = todayCalls.reduce((acc, c) => acc + (c.durationSeconds || 0), 0);
+  const formatTodayTime = (totalSec: number) => {
+    if (totalSec <= 0) return '00m 00s';
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+    return `${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+  };
+
   // 2. Tempo Médio por Chamada
   const validDurations = calls.map((c) => c.durationSeconds || 0).filter((d) => d > 0);
   const totalDuration = validDurations.reduce((acc, curr) => acc + curr, 0);
@@ -121,7 +131,7 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
   return (
     <div className="bg-white border-b border-neutral-200 px-6 py-3.5 space-y-3 shrink-0 shadow-2xs">
       {/* Cards de Métricas Principais */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {/* Card 1: Ligações Hoje */}
         <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
           <div>
@@ -142,7 +152,24 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
           </div>
         </div>
 
-        {/* Card 2: Tempo Médio por Chamada */}
+        {/* Card 2: Tempo Falado Hoje */}
+        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
+              Tempo Falado Hoje
+            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-xl font-bold text-blue-700 font-mono leading-tight">
+                {formatTodayTime(todayTotalSeconds)}
+              </span>
+            </div>
+          </div>
+          <div className="p-2.5 bg-blue-100/60 text-blue-700 rounded-lg shrink-0">
+            <Clock className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Card 3: Tempo Médio por Chamada */}
         <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
           <div>
             <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
@@ -159,7 +186,7 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
           </div>
         </div>
 
-        {/* Card 3: Taxa de Conversão */}
+        {/* Card 4: Taxa de Conversão */}
         <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
           <div>
             <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
@@ -179,7 +206,7 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
           </div>
         </div>
 
-        {/* Card 4: Leads Estagnados */}
+        {/* Card 5: Leads Estagnados */}
         <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
           <div>
             <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
