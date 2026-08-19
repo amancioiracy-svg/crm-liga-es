@@ -10,23 +10,33 @@ export function extractDigits(phone: string): string {
 
 /**
  * REGRA CRUCIAL DE NEGÓCIO:
- * O zero na frente do DDD deve ser adicionado APENAS no link do QR Code.
- * O botão "Copiar Número" deve manter o número bruto sem o zero.
- * Exemplo: "(31) 99150-3721" -> Digitos: "31991503721" -> QR Link: "tel:031991503721"
+ * Na discagem do celular e no link do QR Code, o número deve ter SEMPRE o ZERO na frente do DDD (ex: 031991503721).
+ * O botão de copiar número mantém a visualização legível.
  */
-export function getQrTelLink(phone: string): string {
+export function getDialerTelLink(phone: string): string {
   const digits = extractDigits(phone);
-  return `tel:0${digits}`;
+  if (!digits) return 'tel:';
+  const dialDigits = digits.startsWith('0') ? digits : `0${digits}`;
+  return `tel:${dialDigits}`;
+}
+
+export function getQrTelLink(phone: string): string {
+  return getDialerTelLink(phone);
 }
 
 /**
  * URL do WhatsApp Web/API limpando caracteres especiais, adicionando DDI 55 e mensagem opcional
  */
 export function getWhatsAppUrl(phone: string, text?: string): string {
-  const digits = extractDigits(phone);
+  let digits = extractDigits(phone);
+  // Se começar com 0 (ex: 031...), remove para o formato internacional do WhatsApp (5531...)
+  if (digits.startsWith('0')) {
+    digits = digits.substring(1);
+  }
   let url = `https://api.whatsapp.com/send?phone=55${digits}`;
   if (text) {
     url += `&text=${encodeURIComponent(text)}`;
   }
   return url;
 }
+

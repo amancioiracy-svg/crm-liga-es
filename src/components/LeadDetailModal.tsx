@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Lead, CallLog, CustomTag, PIPELINE_COLUMNS, ColumnStatus, Salesperson } from '../types';
 import { 
   X, Phone, ExternalLink, Calendar, MessageSquare, Plus, CheckCircle2, 
-  QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall,
+  QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall, PhoneOff,
   CalendarClock, AlertTriangle, Bell, User
 } from 'lucide-react';
-import { getWhatsAppUrl } from '../lib/phone';
+import { getWhatsAppUrl, getDialerTelLink } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 
@@ -364,13 +364,22 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-neutral-600 mt-1">
-                <a
-                  href={`tel:${lead.phoneNumber}`}
-                  className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100"
-                >
-                  <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
-                  {lead.phoneNumber}
-                </a>
+                {lead.phoneNumber ? (
+                  <a
+                    href={getDialerTelLink(lead.phoneNumber)}
+                    onClick={() => handleStartCall()}
+                    className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                    title="Discar no celular (adiciona 0 automaticamente na frente)"
+                  >
+                    <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
+                    {lead.phoneNumber}
+                  </a>
+                ) : (
+                  <span className="flex items-center gap-1 font-mono text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded border border-neutral-200 cursor-not-allowed">
+                    <PhoneOff className="w-3.5 h-3.5 text-neutral-400" />
+                    (Sem telefone)
+                  </span>
+                )}
 
                 {lead.publicUrl && (
                   <a

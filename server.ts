@@ -8,10 +8,19 @@ import pg from 'pg';
 import { Lead, CallLog, ColumnStatus, PIPELINE_COLUMNS, CustomTag, Salesperson, DistributeLeadsParams } from './src/types.js';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Health check endpoints for Railway / Render / Cloud Run
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Multer memory storage for zip uploads
 const upload = multer({
