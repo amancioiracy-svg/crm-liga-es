@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lead, CustomTag, PIPELINE_COLUMNS, ColumnStatus } from '../types';
+import { Lead, CustomTag, PIPELINE_COLUMNS, ColumnStatus, Salesperson } from '../types';
 import {
   BarChart3,
   TrendingUp,
@@ -14,7 +14,9 @@ import {
   RefreshCw,
   ExternalLink,
   MessageCircle,
-  Eye
+  Eye,
+  Award,
+  UserCheck
 } from 'lucide-react';
 import { getWhatsAppUrl } from '../lib/phone';
 import { getFollowUpInfo } from '../lib/followUp';
@@ -35,6 +37,7 @@ interface CallLogItem {
 interface AnalyticsDashboardProps {
   leads: Lead[];
   tags: CustomTag[];
+  salespeople?: Salesperson[];
   onOpenDetails: (lead: Lead) => void;
   onShowToast: (msg: string) => void;
 }
@@ -42,6 +45,7 @@ interface AnalyticsDashboardProps {
 export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   leads,
   tags,
+  salespeople = [],
   onOpenDetails,
   onShowToast
 }) => {
@@ -487,6 +491,73 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Desempenho por Vendedor / Equipe */}
+      {salespeople.length > 0 && (
+        <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-2xs space-y-4">
+          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+            <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-500" />
+              Desempenho da Equipe de Vendas
+            </h3>
+            <span className="text-xs text-neutral-500 font-medium">{salespeople.length} vendedor(es) na equipe</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-neutral-200 text-neutral-500 font-medium bg-neutral-50/50">
+                  <th className="py-2.5 px-3">Vendedor</th>
+                  <th className="py-2.5 px-3">Carteira Total</th>
+                  <th className="py-2.5 px-3">Novos (Sem Contato)</th>
+                  <th className="py-2.5 px-3">Em Andamento</th>
+                  <th className="py-2.5 px-3">Fechados</th>
+                  <th className="py-2.5 px-3">Taxa de Conversão</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 text-neutral-800 font-medium">
+                {salespeople.map((seller) => {
+                  const sLeads = leads.filter(l => (l.salespersonId || 'seller-thomas') === seller.id);
+                  const uncontacted = sLeads.filter(l => l.columnStatus === 'Leads' && l.callCount === 0).length;
+                  const inProgress = sLeads.filter(l => ['Ligação 1', 'Ligação 2', 'Ligação 3', 'Ligação 4', 'Interessado'].includes(l.columnStatus)).length;
+                  const closed = sLeads.filter(l => l.columnStatus === 'Fechado').length;
+                  const rate = sLeads.length > 0 ? ((closed / sLeads.length) * 100).toFixed(1) : '0.0';
+
+                  return (
+                    <tr key={seller.id} className="hover:bg-neutral-50 transition-colors">
+                      <td className="py-3 px-3">
+                        <div className="flex items-center gap-2">
+                          <span 
+                            className="w-3 h-3 rounded-full shrink-0" 
+                            style={{ backgroundColor: seller.color || '#0284c7' }} 
+                          />
+                          <div>
+                            <span className="font-bold text-neutral-900">{seller.name}</span>
+                            {seller.isDefault && (
+                              <span className="ml-1.5 text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-full uppercase">
+                                Principal
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 font-bold text-neutral-900">{sLeads.length}</td>
+                      <td className="py-3 px-3 text-neutral-600 font-mono">{uncontacted}</td>
+                      <td className="py-3 px-3 text-blue-700 font-mono font-semibold">{inProgress}</td>
+                      <td className="py-3 px-3 text-emerald-700 font-bold font-mono">+{closed}</td>
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          {rate}%
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Histórico Recente de Ligações Gravadas */}
       <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-2xs space-y-4">

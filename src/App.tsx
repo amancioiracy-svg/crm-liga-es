@@ -60,11 +60,14 @@ export default function App() {
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
-        setLeads(data);
+        setLeads(Array.isArray(data) ? data : []);
+      } else {
+        setLeads([]);
       }
     } catch (err) {
       console.error('Erro ao buscar leads:', err);
       showToast('Erro ao carregar lista de leads.');
+      setLeads([]);
     } finally {
       setLoadingLeads(false);
     }
@@ -370,6 +373,7 @@ export default function App() {
             <AnalyticsDashboard
               leads={displayedLeads}
               tags={tags}
+              salespeople={salespeople}
               onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
               onShowToast={showToast}
             />
@@ -414,6 +418,7 @@ export default function App() {
       <ZipUploadModal
         isOpen={isZipModalOpen}
         onClose={() => setIsZipModalOpen(false)}
+        salespeople={salespeople}
         onImportComplete={() => {
           fetchLeads();
           fetchSalespeople();
