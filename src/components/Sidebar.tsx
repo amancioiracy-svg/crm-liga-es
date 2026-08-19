@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users } from 'lucide-react';
+import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: 'kanban' | 'table' | 'dashboard';
@@ -7,6 +7,7 @@ interface SidebarProps {
   onOpenZipModal: () => void;
   onOpenTagsModal: () => void;
   onOpenSalesTeamModal: () => void;
+  onOpenWhatsAppSettings: () => void;
   onSeedSamples: () => void;
   totalLeads: number;
   salespeopleCount?: number;
@@ -18,6 +19,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenZipModal,
   onOpenTagsModal,
   onOpenSalesTeamModal,
+  onOpenWhatsAppSettings,
   onSeedSamples,
   totalLeads,
   salespeopleCount = 1
@@ -114,6 +116,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-[10px] bg-blue-200 text-blue-900 px-1.5 py-0.2 rounded-full font-bold">
                 {salespeopleCount}
               </span>
+            </button>
+
+            <button
+              onClick={onOpenWhatsAppSettings}
+              className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
+              title="Personalizar mensagem padrão enviada no WhatsApp"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="truncate">Mensagem WhatsApp</span>
             </button>
 
             <button
@@ -312,6 +323,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full font-bold">
                     {salespeopleCount}
                   </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onOpenWhatsAppSettings();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200"
+                >
+                  <MessageSquare className="w-4 h-4 text-emerald-600" />
+                  <span>Configurar Mensagem WhatsApp</span>
                 </button>
 
                 <button

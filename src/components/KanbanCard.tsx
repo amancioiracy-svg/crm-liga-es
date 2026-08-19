@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
 import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronRight, Check, CalendarClock, AlertTriangle, Clock, PhoneCall } from 'lucide-react';
-import { getWhatsAppUrl, getQrTelLink } from '../lib/phone';
+import { getWhatsAppUrl, getQrTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 
@@ -65,7 +65,12 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
   // 3. WhatsApp Web (Abre WhatsApp Web sem abrir várias abas)
   const handleOpenWhatsApp = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
+    const template = getStoredWhatsAppTemplate();
+    const msgText = formatWhatsAppMessage(template, {
+      name: lead.name,
+      site: lead.publicUrl || '',
+      salesperson: lead.salespersonName || 'Thomas'
+    });
     const waUrl = getWhatsAppUrl(lead.phoneNumber, msgText);
     window.open(waUrl, 'whatsapp');
   };

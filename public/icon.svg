@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#2563eb" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  
+  <!-- Rounded App Canvas -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Inner subtle border -->
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="#334155" stroke-width="4" opacity="0.6"/>
+
+  <!-- Glowing background element -->
+  <circle cx="256" cy="256" r="140" fill="url(#accentGrad)" opacity="0.12" filter="url(#glow)"/>
+
+  <!-- Stylized Phone + Lightning / CRM Icon -->
+  <g transform="translate(106, 106)" filter="url(#glow)">
+    <!-- Shield / Card Shape -->
+    <rect x="40" y="20" width="220" height="260" rx="40" fill="url(#accentGrad)" />
+    
+    <!-- Phone receiver glyph inside -->
+    <path d="M125 75 C 115 75, 105 85, 105 95 C 105 155, 145 195, 205 195 C 215 195, 225 185, 225 175 L 210 145 C 205 140, 195 140, 190 145 L 180 155 C 155 145, 135 125, 125 100 L 135 90 C 140 85, 140 75, 135 70 Z" fill="#ffffff" />
+    
+    <!-- Active signal wave dots -->
+    <circle cx="205" cy="85" r="8" fill="#38bdf8" />
+    <circle cx="225" cy="98" r="6" fill="#38bdf8" opacity="0.8" />
+    <circle cx="240" cy="118" r="4" fill="#38bdf8" opacity="0.5" />
+  </g>
+</svg>

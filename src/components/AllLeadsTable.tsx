@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
 import { Search, Phone, ExternalLink, QrCode, Copy, Trash2, Eye, MessageCircle, Check, CalendarClock, AlertTriangle, Clock, FileCode } from 'lucide-react';
-import { getWhatsAppUrl } from '../lib/phone';
+import { getWhatsAppUrl, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 
@@ -270,7 +270,12 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
                       {/* WhatsApp */}
                       <button
                         onClick={() => {
-                          const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
+                          const template = getStoredWhatsAppTemplate();
+                          const msgText = formatWhatsAppMessage(template, {
+                            name: lead.name,
+                            site: lead.publicUrl || '',
+                            salesperson: lead.salespersonName || 'Thomas'
+                          });
                           window.open(getWhatsAppUrl(lead.phoneNumber, msgText), 'whatsapp');
                         }}
                         className="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-colors"

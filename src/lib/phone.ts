@@ -27,6 +27,27 @@ export function getQrTelLink(phone: string): string {
 /**
  * URL do WhatsApp Web/API limpando caracteres especiais, adicionando DDI 55 e mensagem opcional
  */
+export const DEFAULT_WHATSAPP_TEMPLATE = "Aqui, o site que te falei: {site}";
+
+export function getStoredWhatsAppTemplate(): string {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('crm_whatsapp_template') || DEFAULT_WHATSAPP_TEMPLATE;
+  }
+  return DEFAULT_WHATSAPP_TEMPLATE;
+}
+
+export function formatWhatsAppMessage(
+  template: string,
+  params: { name?: string; site?: string; salesperson?: string }
+): string {
+  let msg = template || DEFAULT_WHATSAPP_TEMPLATE;
+  msg = msg.replace(/\{site\}/gi, params.site || '');
+  msg = msg.replace(/\{nome\}/gi, params.name || '');
+  msg = msg.replace(/\{lead\}/gi, params.name || '');
+  msg = msg.replace(/\{vendedor\}/gi, params.salesperson || '');
+  return msg.trim();
+}
+
 export function getWhatsAppUrl(phone: string, text?: string): string {
   let digits = extractDigits(phone);
   // Se começar com 0 (ex: 031...), remove para o formato internacional do WhatsApp (5531...)

@@ -5,7 +5,7 @@ import {
   QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall, PhoneOff,
   CalendarClock, AlertTriangle, Bell, User
 } from 'lucide-react';
-import { getWhatsAppUrl, getDialerTelLink } from '../lib/phone';
+import { getWhatsAppUrl, getDialerTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 
@@ -160,7 +160,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     return currentCol;
   };
 
-  const handleStartCall = () => {
+  const handleStartCall = (triggerDial = true) => {
     const now = Date.now();
     setCallStartTime(now);
     setIsTimerRunning(true);
@@ -179,6 +179,11 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       onShowToast(`Ligação iniciada! Etapa avançada automaticamente para "${nextCol}".`);
     } else {
       onShowToast('Cronômetro de ligação iniciado!');
+    }
+
+    // Auto-dial no celular com o 0 na frente
+    if (triggerDial && lead?.phoneNumber) {
+      window.location.href = getDialerTelLink(lead.phoneNumber);
     }
   };
 
@@ -395,19 +400,25 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                 <button
                   onClick={() => {
-                    handleStartCall();
-                    const msgText = lead.publicUrl ? `Olá! Vi seu site: ${lead.publicUrl}` : undefined;
+                    handleStartCall(false);
+                    const template = getStoredWhatsAppTemplate();
+                    const msgText = formatWhatsAppMessage(template, {
+                      name: lead.name,
+                      site: lead.publicUrl || '',
+                      salesperson: lead.salespersonName || 'Thomas'
+                    });
                     const wa = getWhatsAppUrl(lead.phoneNumber, msgText);
                     window.open(wa, 'whatsapp');
                   }}
-                  className="text-emerald-600 hover:underline font-medium"
+                  className="text-emerald-600 hover:underline font-medium flex items-center gap-1"
                 >
+                  <MessageSquare className="w-3.5 h-3.5" />
                   WhatsApp
                 </button>
 
                 <button
                   onClick={() => {
-                    handleStartCall();
+                    handleStartCall(false);
                     setShowQrModal(true);
                   }}
                   className="hidden sm:inline-flex items-center gap-1 text-neutral-700 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 px-2 py-0.5 rounded font-medium transition-colors"

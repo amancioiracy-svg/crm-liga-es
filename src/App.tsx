@@ -9,6 +9,7 @@ import { TagManagerModal } from './components/TagManagerModal';
 import { ZipUploadModal } from './components/ZipUploadModal';
 import { JsonBatchUpdateModal } from './components/JsonBatchUpdateModal';
 import { SalesTeamModal } from './components/SalesTeamModal';
+import { WhatsAppSettingsModal } from './components/WhatsAppSettingsModal';
 import { MetricsBar } from './components/MetricsBar';
 import { Toast } from './components/Toast';
 import { PhoneCall, Users, CheckCircle, RefreshCw, UserCheck, Share2, Plus } from 'lucide-react';
@@ -30,6 +31,7 @@ export default function App() {
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
   const [isSalesTeamModalOpen, setIsSalesTeamModalOpen] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -224,6 +226,7 @@ export default function App() {
         onOpenZipModal={() => setIsZipModalOpen(true)}
         onOpenTagsModal={() => setIsTagsModalOpen(true)}
         onOpenSalesTeamModal={() => setIsSalesTeamModalOpen(true)}
+        onOpenWhatsAppSettings={() => setIsWhatsAppModalOpen(true)}
         onSeedSamples={handleSeedSamples}
         totalLeads={leads.length}
         salespeopleCount={salespeople.length}
@@ -404,6 +407,12 @@ export default function App() {
         leads={leads}
         onRefreshSalespeople={fetchSalespeople}
         onRefreshLeads={fetchLeads}
+        onShowToast={showToast}
+      />
+
+      <WhatsAppSettingsModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
         onShowToast={showToast}
       />
 
