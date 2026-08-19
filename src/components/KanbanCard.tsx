@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
-import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronRight, Check, CalendarClock, AlertTriangle, Clock } from 'lucide-react';
-import { getWhatsAppUrl } from '../lib/phone';
+import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronRight, Check, CalendarClock, AlertTriangle, Clock, PhoneCall } from 'lucide-react';
+import { getWhatsAppUrl, getQrTelLink } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 
@@ -131,9 +131,16 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
 
         {/* Header do Card: Nome em negrito sutil & Ações de movimento */}
         <div className="flex items-start justify-between gap-2 mb-1.5">
-          <h4 className="text-xs font-semibold text-neutral-800 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">
-            {lead.name}
-          </h4>
+          <div className="min-w-0 flex-1">
+            {lead.salespersonName && (
+              <span className="inline-block text-[9px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded mb-0.5 max-w-full truncate border border-blue-100/80">
+                👤 {lead.salespersonName}
+              </span>
+            )}
+            <h4 className="text-xs font-semibold text-neutral-800 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">
+              {lead.name}
+            </h4>
+          </div>
 
           {/* Botão QR Code muito pequeno conforme especificação */}
           <button
@@ -148,12 +155,23 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           </button>
         </div>
 
-        {/* Número de Telefone Bruto */}
+        {/* Número de Telefone Bruto + Botão de Discagem Direta no Mobile */}
         <div className="flex items-center justify-between gap-1 mb-2">
           <p className="text-[11px] font-mono text-neutral-500 flex items-center gap-1 min-w-0 truncate">
             <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
             <span className="truncate">{lead.phoneNumber}</span>
           </p>
+
+          {/* BOTÃO DISCAR DIRETO NO CELULAR (Apenas em telas pequenas < md) */}
+          <a
+            href={getQrTelLink(lead.phoneNumber)}
+            onClick={(e) => e.stopPropagation()}
+            className="md:hidden inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 active:bg-emerald-700 rounded-md shadow-2xs shrink-0"
+            title="Ligar pelo discador do celular"
+          >
+            <PhoneCall className="w-3 h-3" />
+            <span>LIGAR</span>
+          </a>
         </div>
 
         {/* Exibição Visual de TODAS as Etiquetas (Tags) do Cliente */}
@@ -186,7 +204,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           {/* 1. Copiar URL */}
           <button
             onClick={handleCopyUrl}
-            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 active:bg-neutral-300 rounded transition-colors"
             title="Copiar URL gerada"
           >
             {copiedUrl ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-neutral-500" />}
@@ -196,7 +214,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           {/* 2. WhatsApp */}
           <button
             onClick={handleOpenWhatsApp}
-            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 rounded transition-colors"
             title="Abrir no WhatsApp Web"
           >
             <MessageCircle className="w-3 h-3 text-emerald-600" />
@@ -206,7 +224,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           {/* 3. Copiar Número Bruto */}
           <button
             onClick={handleCopyPhone}
-            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 active:bg-neutral-300 rounded transition-colors"
             title="Copiar Número Bruto (sem 0 adicional)"
           >
             {copiedPhone ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-neutral-500" />}

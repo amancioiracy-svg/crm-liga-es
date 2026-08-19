@@ -131,140 +131,137 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
   };
 
   return (
-    <div className="bg-white border-b border-neutral-200 px-6 py-3.5 space-y-3 shrink-0 shadow-2xs">
-      {/* Cards de Métricas Principais */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="bg-white border-b border-neutral-200 px-3 md:px-6 py-2.5 md:py-3.5 space-y-2.5 md:space-y-3 shrink-0 shadow-2xs">
+      {/* Cards de Métricas Principais (Scrollable Horizontal até telas xl: 1280px+) */}
+      <div className="flex xl:grid overflow-x-auto xl:overflow-x-visible grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5 xl:gap-3 pb-1 xl:pb-0 scrollbar-none">
         {/* Card 1: Ligações Hoje */}
-        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
+        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-2.5 xl:p-3 flex items-center justify-between min-w-[160px] xl:min-w-0 shrink-0 xl:shrink">
           <div>
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
+            <span className="text-[10px] xl:text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block whitespace-nowrap">
               Ligações Hoje
             </span>
-            <div className="flex items-baseline gap-2 mt-0.5">
-              <span className="text-xl font-bold text-neutral-900 leading-tight">
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-base xl:text-xl font-bold text-neutral-900 leading-tight">
                 {todayCalls.length}
               </span>
-              <span className="text-[10px] text-neutral-500">
-                ({calls.length} no total)
+              <span className="text-[9px] xl:text-[10px] text-neutral-500 whitespace-nowrap">
+                ({calls.length} total)
               </span>
             </div>
           </div>
-          <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg shrink-0">
-            <PhoneCall className="w-5 h-5" />
+          <div className="p-2 xl:p-2.5 bg-blue-50 text-blue-600 rounded-lg shrink-0 ml-2">
+            <PhoneCall className="w-4 h-4 xl:w-5 xl:h-5" />
           </div>
         </div>
 
         {/* Card 2: Tempo Falado Hoje */}
-        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
+        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-2.5 xl:p-3 flex items-center justify-between min-w-[160px] xl:min-w-0 shrink-0 xl:shrink">
           <div>
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
+            <span className="text-[10px] xl:text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block whitespace-nowrap">
               Tempo Falado Hoje
             </span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-xl font-bold text-blue-700 font-mono leading-tight">
+              <span className="text-base xl:text-xl font-bold text-blue-700 font-mono leading-tight whitespace-nowrap">
                 {formatTodayTime(todayTotalSeconds)}
               </span>
             </div>
           </div>
-          <div className="p-2.5 bg-blue-100/60 text-blue-700 rounded-lg shrink-0">
-            <Clock className="w-5 h-5" />
+          <div className="p-2 xl:p-2.5 bg-blue-100/60 text-blue-700 rounded-lg shrink-0 ml-2">
+            <Clock className="w-4 h-4 xl:w-5 xl:h-5" />
           </div>
         </div>
 
-        {/* Card 3: Tempo Médio por Chamada */}
-        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
+        {/* Card 3: Tempo Médio */}
+        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-2.5 xl:p-3 flex items-center justify-between min-w-[150px] xl:min-w-0 shrink-0 xl:shrink">
           <div>
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
+            <span className="text-[10px] xl:text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block whitespace-nowrap">
               Tempo Médio
             </span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-xl font-bold text-neutral-900 leading-tight">
+              <span className="text-base xl:text-xl font-bold text-neutral-900 leading-tight whitespace-nowrap">
                 {formatAvgTime(avgDuration)}
               </span>
             </div>
           </div>
-          <div className="p-2.5 bg-purple-50 text-purple-600 rounded-lg shrink-0">
-            <Clock className="w-5 h-5" />
+          <div className="p-2 xl:p-2.5 bg-purple-50 text-purple-600 rounded-lg shrink-0 ml-2">
+            <Clock className="w-4 h-4 xl:w-5 xl:h-5" />
           </div>
         </div>
 
         {/* Card 4: Taxa de Conversão */}
-        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
+        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-2.5 xl:p-3 flex items-center justify-between min-w-[160px] xl:min-w-0 shrink-0 xl:shrink">
           <div>
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
+            <span className="text-[10px] xl:text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block whitespace-nowrap">
               Taxa de Conversão
             </span>
-            <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-xl font-bold text-emerald-700 leading-tight">
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base xl:text-xl font-bold text-emerald-700 leading-tight">
                 {conversionRate}%
               </span>
-              <span className="text-[10px] text-neutral-500">
-                ({closedLeads}/{totalLeads} fechados)
+              <span className="text-[9px] text-neutral-500 font-mono whitespace-nowrap">
+                ({closedLeads}/{totalLeads})
               </span>
             </div>
           </div>
-          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
-            <TrendingUp className="w-5 h-5" />
+          <div className="p-2 xl:p-2.5 bg-emerald-50 text-emerald-600 rounded-lg shrink-0 ml-2">
+            <TrendingUp className="w-4 h-4 xl:w-5 xl:h-5" />
           </div>
         </div>
 
         {/* Card 5: Leads Estagnados */}
-        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 flex items-center justify-between">
+        <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-2.5 xl:p-3 flex items-center justify-between min-w-[160px] xl:min-w-0 shrink-0 xl:shrink">
           <div>
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">
-              Leads Estagnados
+            <span className="text-[10px] xl:text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block whitespace-nowrap">
+              Leads Estagnados (&gt;3d)
             </span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className={`text-xl font-bold leading-tight ${stagnantLeads.length > 0 ? 'text-amber-700' : 'text-neutral-900'}`}>
+              <span className={`text-base xl:text-xl font-bold leading-tight ${stagnantLeads.length > 0 ? 'text-amber-700' : 'text-neutral-900'}`}>
                 {stagnantLeads.length}
-              </span>
-              <span className="text-[10px] text-neutral-500">
-                (sem contato &gt; 3 dias)
               </span>
             </div>
           </div>
-          <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg shrink-0">
-            <AlertCircle className="w-5 h-5" />
+          <div className="p-2 xl:p-2.5 bg-amber-50 text-amber-600 rounded-lg shrink-0 ml-2">
+            <AlertCircle className="w-4 h-4 xl:w-5 xl:h-5" />
           </div>
         </div>
       </div>
 
       {/* Barra de Filtros por Múltiplas Etiquetas & Exportação CSV */}
-      <div className="flex items-center justify-between gap-3 pt-2 border-t border-neutral-100">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-100">
         {/* Menu Dropdown de Seleção Múltipla de Etiquetas */}
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative w-full sm:w-auto" ref={dropdownRef}>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setIsTagDropdownOpen(!isTagDropdownOpen)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-neutral-800 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 shadow-2xs transition-all"
+              className="w-full sm:w-auto inline-flex items-center justify-between sm:justify-start gap-2 px-3 py-1.5 text-xs font-medium text-neutral-800 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 shadow-2xs transition-all"
             >
-              <Filter className="w-3.5 h-3.5 text-neutral-500" />
-              <span>
-                {selectedTagFilters.length === 0
-                  ? `Todas as Etiquetas (${leads.length} leads)`
-                  : `${selectedTagFilters.length} etiqueta(s) selecionada(s)`}
-              </span>
-              <ChevronDown className={`w-3.5 h-3.5 text-neutral-400 transition-transform ${isTagDropdownOpen ? 'rotate-180' : ''}`} />
+              <div className="flex items-center gap-2 truncate">
+                <Filter className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                <span className="truncate">
+                  {selectedTagFilters.length === 0
+                    ? `Todas as Etiquetas (${leads.length} leads)`
+                    : `${selectedTagFilters.length} etiqueta(s) selecionada(s)`}
+                </span>
+              </div>
+              <ChevronDown className={`w-3.5 h-3.5 text-neutral-400 transition-transform shrink-0 ${isTagDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {selectedTagFilters.length > 0 && (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => onTagFilterChange([])}
-                  className="text-[11px] text-rose-600 hover:text-rose-700 hover:underline font-semibold flex items-center gap-0.5"
-                >
-                  <X className="w-3 h-3" />
-                  Limpar filtro
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => onTagFilterChange([])}
+                className="text-[11px] text-rose-600 hover:text-rose-700 hover:underline font-semibold flex items-center gap-0.5 shrink-0"
+              >
+                <X className="w-3 h-3" />
+                Limpar
+              </button>
             )}
           </div>
 
           {/* Menu Popover com Caixas de Seleção (Checkboxes) */}
           {isTagDropdownOpen && (
-            <div className="absolute top-full left-0 mt-1.5 w-72 bg-white border border-neutral-200 rounded-xl shadow-xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-100">
+            <div className="absolute top-full left-0 mt-1.5 w-full sm:w-72 bg-white border border-neutral-200 rounded-xl shadow-xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-100">
               <div className="px-2 py-1.5 border-b border-neutral-100 flex items-center justify-between">
                 <span className="text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
                   Filtrar por Etiqueta
@@ -336,7 +333,7 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
                         />
                         <span
                           style={{ backgroundColor: t.bgColor, color: t.color }}
-                          className="px-2 py-0.5 rounded text-[11px] font-semibold border border-black/5 truncate max-w-[150px]"
+                          className="px-2 py-0.5 rounded text-[11px] font-semibold border border-black/5 truncate max-w-[140px]"
                         >
                           {t.name}
                         </span>
@@ -353,28 +350,28 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
         </div>
 
         {/* Botões de Ação: Atualizar via JSON & Exportar CSV */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
           <button
             type="button"
             onClick={onOpenJsonBatchModal}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-800 bg-white border border-neutral-300 hover:bg-neutral-50 rounded-lg shadow-2xs transition-all"
-            title="Colar JSON para atualizar status de múltiplos leads em lote"
+            className="inline-flex items-center justify-center gap-1.5 px-2.5 md:px-3 py-1.5 text-xs font-semibold text-neutral-800 bg-white border border-neutral-300 hover:bg-neutral-50 rounded-lg shadow-2xs transition-all"
+            title="Colar JSON para atualizar status em lote"
           >
             <FileCode className="w-3.5 h-3.5 text-blue-600" />
-            <span>Atualização em Lote (JSON)</span>
+            <span className="hidden sm:inline">Atualização em Lote</span> (JSON)
           </button>
 
           <button
             onClick={handleExportCsv}
             disabled={exportingCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-all disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-1.5 px-2.5 md:px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-all disabled:opacity-50"
           >
             {exportingCsv ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Download className="w-3.5 h-3.5" />
             )}
-            <span>Exportar Relatório (CSV)</span>
+            <span>CSV</span>
           </button>
         </div>
       </div>

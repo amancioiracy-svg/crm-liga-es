@@ -5,10 +5,10 @@ import { createServer as createViteServer } from 'vite';
 import multer from 'multer';
 import JSZip from 'jszip';
 import pg from 'pg';
-import { Lead, CallLog, ColumnStatus, PIPELINE_COLUMNS, CustomTag } from './src/types.js';
+import { Lead, CallLog, ColumnStatus, PIPELINE_COLUMNS, CustomTag, Salesperson, DistributeLeadsParams } from './src/types.js';
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -31,6 +31,18 @@ const DEFAULT_CUSTOM_TAGS: CustomTag[] = [
   { id: 'tag-ocupado', name: 'Ocupado', color: '#be123c', bgColor: '#ffe4e6' },
 ];
 
+// Default Salesperson: Thomas (Vendedor Principal)
+const DEFAULT_SALESPERSON: Salesperson = {
+  id: 'seller-thomas',
+  name: 'Thomas',
+  email: 'thomas@empresa.com',
+  phone: '',
+  color: '#0284c7',
+  bgColor: '#e0f2fe',
+  isDefault: true,
+  createdAt: new Date().toISOString()
+};
+
 // Database Connection setup
 let pgPool: pg.Pool | null = null;
 let usePostgres = false;
@@ -41,6 +53,9 @@ const memoryCallLogsMap = new Map<string, CallLog[]>();
 const memoryTagsMap = new Map<string, CustomTag>(
   DEFAULT_CUSTOM_TAGS.map(t => [t.id, t])
 );
+const memorySalespeopleMap = new Map<string, Salesperson>([
+  [DEFAULT_SALESPERSON.id, DEFAULT_SALESPERSON]
+]);
 
 async function initDatabase(retries = 5, delayMs = 3000) {
   const dbUrl = (
@@ -82,12 +97,25 @@ async function initDatabase(retries = 5, delayMs = 3000) {
 
         // Auto-create tables if they don't exist & run migrations
         await client.query(`
+          CREATE TABLE IF NOT EXISTS salespeople (
+            id VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            email VARCHAR(255),
+            phone VARCHAR(100),
+            color VARCHAR(100) NOT NULL DEFAULT '#0284c7',
+            bg_color VARCHAR(100) NOT NULL DEFAULT '#e0f2fe',
+            is_default BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+
           CREATE TABLE IF NOT EXISTS leads (
             id VARCHAR(255) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             phone_number VARCHAR(100) NOT NULL,
             public_url TEXT,
             column_status VARCHAR(100) NOT NULL DEFAULT 'Leads',
+            salesperson_id VARCHAR(255) DEFAULT 'seller-thomas',
+            salesperson_name VARCHAR(255) DEFAULT 'Thomas',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
@@ -105,6 +133,8 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           ALTER TABLE calls ADD COLUMN IF NOT EXISTS duration_seconds INT DEFAULT 0;
           ALTER TABLE calls ADD COLUMN IF NOT EXISTS follow_up_at TIMESTAMP WITH TIME ZONE;
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS next_follow_up_at TIMESTAMP WITH TIME ZONE;
+          ALTER TABLE leads ADD COLUMN IF NOT EXISTS salesperson_id VARCHAR(255) DEFAULT 'seller-thomas';
+          ALTER TABLE leads ADD COLUMN IF NOT EXISTS salesperson_name VARCHAR(255) DEFAULT 'Thomas';
 
           CREATE TABLE IF NOT EXISTS custom_tags (
             id VARCHAR(255) PRIMARY KEY,
@@ -113,6 +143,16 @@ async function initDatabase(retries = 5, delayMs = 3000) {
             bg_color VARCHAR(100) NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
+
+          -- Seed default primary salesperson (Thomas)
+          INSERT INTO salespeople (id, name, email, color, bg_color, is_default)
+          VALUES ('seller-thomas', 'Thomas', 'thomas@empresa.com', '#0284c7', '#e0f2fe', TRUE)
+          ON CONFLICT (id) DO NOTHING;
+
+          -- Backfill any leads without a salesperson
+          UPDATE leads 
+          SET salesperson_id = 'seller-thomas', salesperson_name = 'Thomas'
+          WHERE salesperson_id IS NULL OR salesperson_id = '';
         `);
 
         // Seed default tags if table is empty
@@ -157,7 +197,7 @@ app.get(['/health', '/api/health', '/healthz', '/ping'], (req, res) => {
 
 // API ROUTES
 
-// 1. Get all leads with call stats & last call tag
+// 1. Get all leads with call stats & salesperson info
 app.get('/api/leads', async (req, res) => {
   try {
     if (usePostgres && pgPool) {
@@ -168,6 +208,8 @@ app.get('/api/leads', async (req, res) => {
           l.phone_number AS "phoneNumber",
           l.public_url AS "publicUrl",
           COALESCE(l.column_status, 'Leads') AS "columnStatus",
+          COALESCE(l.salesperson_id, 'seller-thomas') AS "salespersonId",
+          COALESCE(l.salesperson_name, 'Thomas') AS "salespersonName",
           l.next_follow_up_at AS "nextFollowUpAt",
           l.created_at AS "createdAt",
           l.updated_at AS "updatedAt",
@@ -180,7 +222,7 @@ app.get('/api/leads', async (req, res) => {
           ) AS "lastCallTag"
         FROM leads l
         LEFT JOIN calls c ON l.id = c.lead_id
-        GROUP BY l.id, l.name, l.phone_number, l.public_url, l.column_status, l.next_follow_up_at, l.created_at, l.updated_at
+        GROUP BY l.id, l.name, l.phone_number, l.public_url, l.column_status, l.salesperson_id, l.salesperson_name, l.next_follow_up_at, l.created_at, l.updated_at
         ORDER BY l.created_at DESC
       `);
       return res.json(result.rows);
@@ -191,6 +233,8 @@ app.get('/api/leads', async (req, res) => {
         const lastCall = sortedCalls.length > 0 ? sortedCalls[0] : undefined;
         return {
           ...lead,
+          salespersonId: lead.salespersonId || 'seller-thomas',
+          salespersonName: lead.salespersonName || 'Thomas',
           callCount: calls.length,
           lastCallAt: lastCall?.createdAt,
           lastCallTag: lastCall?.tag
@@ -283,6 +327,381 @@ app.delete('/api/tags/:id', async (req, res) => {
   }
 });
 
+// SALESPEOPLE (VENDEDORES) ENDPOINTS
+
+// 1. Get all salespeople with their lead stats
+app.get('/api/salespeople', async (req, res) => {
+  try {
+    if (usePostgres && pgPool) {
+      const spRes = await pgPool.query(`
+        SELECT 
+          s.id, 
+          s.name, 
+          s.email, 
+          s.phone, 
+          s.color, 
+          s.bg_color AS "bgColor", 
+          s.is_default AS "isDefault", 
+          s.created_at AS "createdAt",
+          COUNT(l.id)::int AS "totalLeads",
+          COUNT(CASE WHEN l.column_status = 'Leads' AND (SELECT COUNT(*) FROM calls WHERE lead_id = l.id) = 0 THEN 1 END)::int AS "uncontactedLeads",
+          COUNT(CASE WHEN l.column_status IN ('Ligação 1', 'Ligação 2', 'Ligação 3', 'Ligação 4', 'Interessado') THEN 1 END)::int AS "inProgressLeads",
+          COUNT(CASE WHEN l.column_status = 'Fechado' THEN 1 END)::int AS "closedLeads",
+          COUNT(CASE WHEN l.column_status = 'Recusado' THEN 1 END)::int AS "refusedLeads"
+        FROM salespeople s
+        LEFT JOIN leads l ON (l.salesperson_id = s.id OR (s.is_default = TRUE AND l.salesperson_id IS NULL))
+        GROUP BY s.id, s.name, s.email, s.phone, s.color, s.bg_color, s.is_default, s.created_at
+        ORDER BY s.is_default DESC, s.created_at ASC
+      `);
+      return res.json(spRes.rows);
+    } else {
+      const allLeads = Array.from(memoryLeadsMap.values());
+      const sellers = Array.from(memorySalespeopleMap.values()).map(s => {
+        const myLeads = allLeads.filter(l => (l.salespersonId || 'seller-thomas') === s.id);
+        const uncontacted = myLeads.filter(l => {
+          if (l.columnStatus !== 'Leads') return false;
+          const calls = memoryCallLogsMap.get(l.id) || [];
+          return calls.length === 0;
+        }).length;
+        const inProgress = myLeads.filter(l => ['Ligação 1', 'Ligação 2', 'Ligação 3', 'Ligação 4', 'Interessado'].includes(l.columnStatus)).length;
+        const closed = myLeads.filter(l => l.columnStatus === 'Fechado').length;
+        const refused = myLeads.filter(l => l.columnStatus === 'Recusado').length;
+
+        return {
+          ...s,
+          totalLeads: myLeads.length,
+          uncontactedLeads: uncontacted,
+          inProgressLeads: inProgress,
+          closedLeads: closed,
+          refusedLeads: refused
+        };
+      });
+      return res.json(sellers);
+    }
+  } catch (error) {
+    console.error('Error fetching salespeople:', error);
+    res.status(500).json({ error: 'Erro ao buscar vendedores.' });
+  }
+});
+
+// 2. Create new salesperson
+app.post('/api/salespeople', async (req, res) => {
+  const { name, email, phone, color, bgColor } = req.body;
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Nome do vendedor(a) é obrigatório.' });
+  }
+
+  const nameTrim = name.trim();
+  const sellerId = `seller-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const sellerColor = color || '#0284c7';
+  const sellerBgColor = bgColor || '#e0f2fe';
+  const sellerEmail = email ? email.trim() : '';
+  const sellerPhone = phone ? phone.trim() : '';
+  const createdAt = new Date().toISOString();
+
+  try {
+    if (usePostgres && pgPool) {
+      const result = await pgPool.query(
+        `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, CURRENT_TIMESTAMP)
+         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", created_at AS "createdAt"`,
+        [sellerId, nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor]
+      );
+      return res.status(201).json({
+        ...result.rows[0],
+        totalLeads: 0,
+        uncontactedLeads: 0,
+        inProgressLeads: 0,
+        closedLeads: 0,
+        refusedLeads: 0
+      });
+    } else {
+      const newSeller: Salesperson = {
+        id: sellerId,
+        name: nameTrim,
+        email: sellerEmail,
+        phone: sellerPhone,
+        color: sellerColor,
+        bgColor: sellerBgColor,
+        isDefault: false,
+        createdAt
+      };
+      memorySalespeopleMap.set(sellerId, newSeller);
+      return res.status(201).json({
+        ...newSeller,
+        totalLeads: 0,
+        uncontactedLeads: 0,
+        inProgressLeads: 0,
+        closedLeads: 0,
+        refusedLeads: 0
+      });
+    }
+  } catch (error: any) {
+    console.error('Error creating salesperson:', error);
+    res.status(500).json({ error: `Erro ao cadastrar vendedor: ${error.message}` });
+  }
+});
+
+// 3. Update salesperson
+app.put('/api/salespeople/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, email, phone, color, bgColor } = req.body;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Nome do vendedor(a) é obrigatório.' });
+  }
+
+  const nameTrim = name.trim();
+  const sellerColor = color || '#0284c7';
+  const sellerBgColor = bgColor || '#e0f2fe';
+  const sellerEmail = email ? email.trim() : '';
+  const sellerPhone = phone ? phone.trim() : '';
+
+  try {
+    if (usePostgres && pgPool) {
+      const result = await pgPool.query(
+        `UPDATE salespeople 
+         SET name = $1, email = $2, phone = $3, color = $4, bg_color = $5
+         WHERE id = $6
+         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", created_at AS "createdAt"`,
+        [nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor, id]
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: 'Vendedor não encontrado.' });
+      }
+
+      // Update salesperson_name in leads table
+      await pgPool.query(`UPDATE leads SET salesperson_name = $1 WHERE salesperson_id = $2`, [nameTrim, id]);
+
+      return res.json(result.rows[0]);
+    } else {
+      const seller = memorySalespeopleMap.get(id);
+      if (!seller) {
+        return res.status(404).json({ error: 'Vendedor não encontrado.' });
+      }
+      seller.name = nameTrim;
+      seller.email = sellerEmail;
+      seller.phone = sellerPhone;
+      seller.color = sellerColor;
+      seller.bgColor = sellerBgColor;
+      memorySalespeopleMap.set(id, seller);
+
+      // Update leads in memory
+      for (const lead of memoryLeadsMap.values()) {
+        if (lead.salespersonId === id) {
+          lead.salespersonName = nameTrim;
+        }
+      }
+
+      return res.json(seller);
+    }
+  } catch (error: any) {
+    console.error('Error updating salesperson:', error);
+    res.status(500).json({ error: 'Erro ao atualizar vendedor.' });
+  }
+});
+
+// 4. Delete salesperson (Reassigns their leads back to Thomas / primary)
+app.delete('/api/salespeople/:id', async (req, res) => {
+  const { id } = req.params;
+
+  if (id === 'seller-thomas') {
+    return res.status(400).json({ error: 'Não é permitido excluir o vendedor principal (Thomas).' });
+  }
+
+  try {
+    if (usePostgres && pgPool) {
+      // Reassign leads to Thomas
+      await pgPool.query(
+        `UPDATE leads SET salesperson_id = 'seller-thomas', salesperson_name = 'Thomas' WHERE salesperson_id = $1`,
+        [id]
+      );
+      // Delete salesperson
+      await pgPool.query(`DELETE FROM salespeople WHERE id = $1`, [id]);
+      return res.json({ success: true, message: 'Vendedor excluído e seus leads foram transferidos para Thomas.' });
+    } else {
+      for (const lead of memoryLeadsMap.values()) {
+        if (lead.salespersonId === id) {
+          lead.salespersonId = 'seller-thomas';
+          lead.salespersonName = 'Thomas';
+        }
+      }
+      memorySalespeopleMap.delete(id);
+      return res.json({ success: true, message: 'Vendedor excluído e seus leads foram transferidos para Thomas.' });
+    }
+  } catch (error) {
+    console.error('Error deleting salesperson:', error);
+    res.status(500).json({ error: 'Erro ao excluir vendedor.' });
+  }
+});
+
+// 5. Assign a single lead to a salesperson
+app.put('/api/leads/:id/assign', async (req, res) => {
+  const { id } = req.params;
+  const { salespersonId, salespersonName } = req.body;
+
+  if (!salespersonId) {
+    return res.status(400).json({ error: 'ID do vendedor é obrigatório.' });
+  }
+
+  try {
+    let resolvedName = salespersonName;
+    if (!resolvedName) {
+      if (usePostgres && pgPool) {
+        const spRes = await pgPool.query('SELECT name FROM salespeople WHERE id = $1', [salespersonId]);
+        if (spRes.rows.length > 0) resolvedName = spRes.rows[0].name;
+      } else {
+        const sp = memorySalespeopleMap.get(salespersonId);
+        if (sp) resolvedName = sp.name;
+      }
+    }
+    resolvedName = resolvedName || 'Thomas';
+
+    if (usePostgres && pgPool) {
+      const result = await pgPool.query(
+        `UPDATE leads SET salesperson_id = $1, salesperson_name = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *`,
+        [salespersonId, resolvedName, id]
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: 'Lead não encontrado.' });
+      }
+      return res.json({ success: true, lead: result.rows[0] });
+    } else {
+      const lead = memoryLeadsMap.get(id);
+      if (!lead) {
+        return res.status(404).json({ error: 'Lead não encontrado.' });
+      }
+      lead.salespersonId = salespersonId;
+      lead.salespersonName = resolvedName;
+      lead.updatedAt = new Date().toISOString();
+      memoryLeadsMap.set(id, lead);
+      return res.json({ success: true, lead });
+    }
+  } catch (error) {
+    console.error('Error assigning lead:', error);
+    res.status(500).json({ error: 'Erro ao atribuir lead ao vendedor.' });
+  }
+});
+
+// 6. DISTRIBUTE UNCONTACTED LEADS (DIVISÃO DE LEADS)
+// RULE: ONLY leads in column 'Leads' with 0 calls are eligible. Leads in progress are NEVER moved.
+app.post('/api/leads/distribute', async (req, res) => {
+  const { targetSalespersonId, mode = 'percentage', value, sourceSalespersonId } = req.body;
+
+  if (!targetSalespersonId) {
+    return res.status(400).json({ error: 'Vendedor(a) de destino é obrigatório.' });
+  }
+
+  const numValue = Number(value);
+  if (isNaN(numValue) || numValue <= 0) {
+    return res.status(400).json({ error: 'Informe um valor numérico válido (porcentagem ou quantidade).' });
+  }
+
+  try {
+    let targetSalesperson: Salesperson | undefined;
+
+    if (usePostgres && pgPool) {
+      const spRes = await pgPool.query(`SELECT id, name, color, bg_color AS "bgColor" FROM salespeople WHERE id = $1`, [targetSalespersonId]);
+      if (spRes.rows.length > 0) {
+        targetSalesperson = spRes.rows[0];
+      }
+    } else {
+      targetSalesperson = memorySalespeopleMap.get(targetSalespersonId);
+    }
+
+    if (!targetSalesperson) {
+      return res.status(404).json({ error: 'Vendedor(a) de destino não encontrado(a).' });
+    }
+
+    let eligibleLeadIds: string[] = [];
+
+    if (usePostgres && pgPool) {
+      let query = `
+        SELECT l.id
+        FROM leads l
+        LEFT JOIN calls c ON l.id = c.lead_id
+        WHERE l.column_status = 'Leads'
+      `;
+      const params: any[] = [];
+
+      if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
+        params.push(sourceSalespersonId);
+        query += ` AND l.salesperson_id = $${params.length}`;
+      }
+
+      query += `
+        GROUP BY l.id, l.created_at
+        HAVING COUNT(c.id) = 0
+        ORDER BY l.created_at DESC
+      `;
+
+      const eligibleRes = await pgPool.query(query, params);
+      eligibleLeadIds = eligibleRes.rows.map(r => r.id);
+    } else {
+      const allLeads = Array.from(memoryLeadsMap.values());
+      eligibleLeadIds = allLeads
+        .filter(lead => {
+          if (lead.columnStatus !== 'Leads') return false;
+          const calls = memoryCallLogsMap.get(lead.id) || [];
+          if (calls.length > 0) return false;
+          if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
+            return (lead.salespersonId || 'seller-thomas') === sourceSalespersonId;
+          }
+          return true;
+        })
+        .map(l => l.id);
+    }
+
+    if (eligibleLeadIds.length === 0) {
+      return res.status(400).json({
+        error: 'Nenhum lead novo não abordado (coluna "Leads" com 0 ligações) está disponível para distribuição.'
+      });
+    }
+
+    // Calculate count to transfer
+    let countToTransfer = 0;
+    if (mode === 'percentage') {
+      const pct = Math.min(100, Math.max(1, numValue));
+      countToTransfer = Math.round((eligibleLeadIds.length * pct) / 100);
+      if (countToTransfer < 1 && eligibleLeadIds.length > 0) countToTransfer = 1;
+    } else {
+      countToTransfer = Math.min(eligibleLeadIds.length, Math.max(1, Math.floor(numValue)));
+    }
+
+    const idsToTransfer = eligibleLeadIds.slice(0, countToTransfer);
+
+    if (usePostgres && pgPool) {
+      await pgPool.query(
+        `UPDATE leads 
+         SET salesperson_id = $1, salesperson_name = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ANY($3::text[])`,
+        [targetSalesperson.id, targetSalesperson.name, idsToTransfer]
+      );
+    } else {
+      for (const id of idsToTransfer) {
+        const lead = memoryLeadsMap.get(id);
+        if (lead) {
+          lead.salespersonId = targetSalesperson.id;
+          lead.salespersonName = targetSalesperson.name;
+          lead.updatedAt = new Date().toISOString();
+          memoryLeadsMap.set(id, lead);
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      transferredCount: idsToTransfer.length,
+      targetSalespersonName: targetSalesperson.name,
+      totalEligibleBefore: eligibleLeadIds.length,
+      remainingEligible: eligibleLeadIds.length - idsToTransfer.length
+    });
+  } catch (error: any) {
+    console.error('Error distributing leads:', error);
+    res.status(500).json({ error: `Erro ao distribuir leads: ${error.message}` });
+  }
+});
+
 // Helper function to process lead items (shared between zip upload and batch JSON API)
 async function processLeadItems(items: any[]) {
   let totalProcessed = 0;
@@ -334,19 +753,22 @@ async function processLeadItems(items: any[]) {
       publicUrl = String(data.publicUrl || data.public_url || data.website || data.url || data.siteUrl || data.site || '').trim();
     }
 
+    const salespersonId = String(data.salespersonId || data.salesperson_id || 'seller-thomas').trim();
+    const salespersonName = String(data.salespersonName || data.salesperson_name || 'Thomas').trim();
+
     if (usePostgres && pgPool) {
       const checkRes = await pgPool.query('SELECT id FROM leads WHERE id = $1', [leadId]);
       const isExisting = checkRes.rows.length > 0;
 
       await pgPool.query(
-        `INSERT INTO leads (id, name, phone_number, public_url, column_status)
-         VALUES ($1, $2, $3, $4, 'Leads')
+        `INSERT INTO leads (id, name, phone_number, public_url, column_status, salesperson_id, salesperson_name)
+         VALUES ($1, $2, $3, $4, 'Leads', $5, $6)
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name,
            phone_number = EXCLUDED.phone_number,
            public_url = EXCLUDED.public_url,
            updated_at = CURRENT_TIMESTAMP`,
-        [leadId, name, phoneNumber, publicUrl]
+        [leadId, name, phoneNumber, publicUrl, salespersonId, salespersonName]
       );
 
       if (isExisting) {
@@ -369,6 +791,8 @@ async function processLeadItems(items: any[]) {
           phoneNumber,
           publicUrl,
           columnStatus: 'Leads',
+          salespersonId,
+          salespersonName,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           callCount: 0
@@ -975,6 +1399,7 @@ app.get('/api/export/csv', async (req, res) => {
           l.phone_number AS "phone_number",
           l.public_url AS "public_url",
           l.column_status AS "column_status",
+          COALESCE(l.salesperson_name, 'Thomas') AS "salesperson_name",
           l.next_follow_up_at AS "next_follow_up_at",
           l.created_at AS "lead_created_at",
           c.id AS "call_id",
@@ -999,6 +1424,7 @@ app.get('/api/export/csv', async (req, res) => {
             phone_number: lead.phoneNumber,
             public_url: lead.publicUrl || '',
             column_status: lead.columnStatus,
+            salesperson_name: lead.salespersonName || 'Thomas',
             next_follow_up_at: lead.nextFollowUpAt || '',
             lead_created_at: lead.createdAt,
             call_id: '',
@@ -1016,6 +1442,7 @@ app.get('/api/export/csv', async (req, res) => {
               phone_number: lead.phoneNumber,
               public_url: lead.publicUrl || '',
               column_status: lead.columnStatus,
+              salesperson_name: lead.salespersonName || 'Thomas',
               next_follow_up_at: lead.nextFollowUpAt || '',
               lead_created_at: lead.createdAt,
               call_id: c.id,
@@ -1036,6 +1463,7 @@ app.get('/api/export/csv', async (req, res) => {
       'Nome do Lead',
       'Telefone',
       'URL do Site',
+      'Vendedor Responsável',
       'Estágio no Pipeline',
       'ID da Ligação',
       'Etiqueta / Resultado',
@@ -1069,6 +1497,7 @@ app.get('/api/export/csv', async (req, res) => {
         r.lead_name,
         r.phone_number,
         r.public_url,
+        r.salesperson_name || 'Thomas',
         r.column_status,
         r.call_id,
         r.call_tag,
@@ -1134,17 +1563,7 @@ app.post('/api/seed-samples', async (req, res) => {
   res.json({ message: `${insertedCount} leads de exemplo adicionados com sucesso!` });
 });
 
-// Static assets & SPA fallback (Production)
-const distPath = path.resolve(process.cwd(), 'dist');
-if (process.env.NODE_ENV === 'production' && fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
-
-// 404 Handler for API routes (returns JSON instead of falling through to HTML SPA fallback)
+// 404 Handler for unhandled API routes
 app.use('/api/*', (req, res) => {
   res.status(404).json({ error: `Rota de API não encontrada: ${req.originalUrl}` });
 });
@@ -1169,6 +1588,12 @@ async function main() {
       appType: 'spa'
     });
     app.use(vite.middlewares);
+  } else {
+    const distPath = path.resolve(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
@@ -1179,20 +1604,6 @@ async function main() {
       console.error('Background initDatabase error:', err);
     });
   });
-
-  // Dual-port binding to guarantee Railway public domain routing works whether Railway maps PORT or 3000
-  if (PORT !== 3000) {
-    try {
-      const fallbackServer = app.listen(3000, '0.0.0.0', () => {
-        console.log(`🚀 CRM Server also listening on fallback port http://0.0.0.0:3000`);
-      });
-      fallbackServer.on('error', () => {
-        // Silently ignore if port 3000 is already bound
-      });
-    } catch {
-      // Ignore if port 3000 is already in use
-    }
-  }
 }
 
 main();

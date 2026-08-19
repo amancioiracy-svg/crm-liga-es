@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Lead, CallLog, CustomTag, PIPELINE_COLUMNS, ColumnStatus } from '../types';
+import { Lead, CallLog, CustomTag, PIPELINE_COLUMNS, ColumnStatus, Salesperson } from '../types';
 import { 
   X, Phone, ExternalLink, Calendar, MessageSquare, Plus, CheckCircle2, 
   QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall,
-  CalendarClock, AlertTriangle, Bell
+  CalendarClock, AlertTriangle, Bell, User
 } from 'lucide-react';
 import { getWhatsAppUrl } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
@@ -16,9 +16,11 @@ interface LeadDetailModalProps {
   allLeads?: Lead[];
   onSelectLead?: (lead: Lead) => void;
   tags: CustomTag[];
+  salespeople?: Salesperson[];
   onOpenTagsModal: () => void;
   onAddCallLog: (leadId: string, tag: string, comment: string, durationSeconds?: number, followUpAt?: string) => Promise<void>;
   onUpdateColumn: (leadId: string, newColumn: ColumnStatus) => Promise<void>;
+  onReassignLead?: (leadId: string, salespersonId: string, salespersonName: string) => Promise<void>;
   onShowToast: (msg: string) => void;
 }
 
@@ -39,9 +41,11 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   allLeads = [],
   onSelectLead,
   tags,
+  salespeople = [],
   onOpenTagsModal,
   onAddCallLog,
   onUpdateColumn,
+  onReassignLead,
   onShowToast
 }) => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -337,18 +341,18 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   return (
     <>
       <div 
-        className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-150"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
         onClick={onClose}
       >
         <div 
-          className="bg-white rounded-xl shadow-xl border border-neutral-200 max-w-2xl w-full p-6 relative my-8 max-h-[90vh] flex flex-col"
+          className="bg-white rounded-xl shadow-xl border border-neutral-200 max-w-2xl w-full p-3.5 sm:p-6 relative my-2 sm:my-8 max-h-[95vh] sm:max-h-[90vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Top Bar / Header */}
-          <div className="flex items-start justify-between pb-4 border-b border-neutral-100">
+          <div className="flex items-start justify-between pb-3 sm:pb-4 border-b border-neutral-100">
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-lg font-semibold text-neutral-900">{lead.name}</h2>
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1">
+                <h2 className="text-base sm:text-lg font-bold text-neutral-900 leading-tight">{lead.name}</h2>
                 <span className="text-[10px] font-mono text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded">
                   ID: {lead.id}
                 </span>
@@ -359,18 +363,21 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600">
-                <span className="flex items-center gap-1 font-mono font-medium text-neutral-800">
-                  <Phone className="w-3.5 h-3.5 text-neutral-400" />
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-neutral-600 mt-1">
+                <a
+                  href={`tel:${lead.phoneNumber}`}
+                  className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
                   {lead.phoneNumber}
-                </span>
+                </a>
 
                 {lead.publicUrl && (
                   <a
                     href={lead.publicUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1 text-blue-600 hover:underline"
+                    className="flex items-center gap-1 text-blue-600 hover:underline font-medium"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     Abrir Site
@@ -394,17 +401,17 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     handleStartCall();
                     setShowQrModal(true);
                   }}
-                  className="inline-flex items-center gap-1 text-neutral-700 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 px-2 py-0.5 rounded font-medium transition-colors"
+                  className="hidden sm:inline-flex items-center gap-1 text-neutral-700 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 px-2 py-0.5 rounded font-medium transition-colors"
                 >
                   <QrCode className="w-3.5 h-3.5 text-neutral-600" />
-                  QR Code Discagem
+                  QR Code
                 </button>
               </div>
             </div>
 
             <button
               onClick={onClose}
-              className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+              className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -508,11 +515,39 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               );
             })()}
 
-            {/* Status do Lead & Seletor de Coluna */}
+            {/* Status do Lead, Vendedor Responsável & Seletor de Coluna */}
             <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200/80 flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs">
-                <span className="text-neutral-500">Estágio Atual do Pipeline:</span>
-                <span className="ml-2 font-medium text-neutral-800">{lead.columnStatus}</span>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <div>
+                  <span className="text-neutral-500">Estágio:</span>
+                  <span className="ml-1.5 font-bold text-neutral-800">{lead.columnStatus}</span>
+                </div>
+
+                {salespeople.length > 0 && (
+                  <div className="flex items-center gap-1.5 border-l border-neutral-200 pl-3">
+                    <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span className="text-neutral-500">Vendedor:</span>
+                    <select
+                      value={lead.salespersonId || 'seller-thomas'}
+                      onChange={async (e) => {
+                        const newSellerId = e.target.value;
+                        const target = salespeople.find(s => s.id === newSellerId);
+                        const newSellerName = target ? target.name : 'Thomas';
+                        if (onReassignLead) {
+                          await onReassignLead(lead.id, newSellerId, newSellerName);
+                          onShowToast(`Lead atribuído a ${newSellerName}`);
+                        }
+                      }}
+                      className="text-xs bg-white border border-neutral-300 rounded px-2 py-0.5 font-semibold text-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                    >
+                      {salespeople.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} {s.isDefault ? '(Principal)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2">

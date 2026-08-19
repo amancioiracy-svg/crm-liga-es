@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lead, ColumnStatus, CustomTag } from './types';
+import { Lead, ColumnStatus, CustomTag, Salesperson } from './types';
 import { Sidebar } from './components/Sidebar';
 import { KanbanBoard } from './components/KanbanBoard';
 import { AllLeadsTable } from './components/AllLeadsTable';
@@ -8,13 +8,18 @@ import { LeadDetailModal } from './components/LeadDetailModal';
 import { TagManagerModal } from './components/TagManagerModal';
 import { ZipUploadModal } from './components/ZipUploadModal';
 import { JsonBatchUpdateModal } from './components/JsonBatchUpdateModal';
+import { SalesTeamModal } from './components/SalesTeamModal';
 import { MetricsBar } from './components/MetricsBar';
 import { Toast } from './components/Toast';
-import { PhoneCall, Users, CheckCircle, RefreshCw } from 'lucide-react';
+import { PhoneCall, Users, CheckCircle, RefreshCw, UserCheck, Share2, Plus } from 'lucide-react';
 
 export default function App() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tags, setTags] = useState<CustomTag[]>([]);
+  const [salespeople, setSalespeople] = useState<Salesperson[]>([
+    { id: 'seller-thomas', name: 'Thomas', isDefault: true, color: '#0284c7', bgColor: '#e0f2fe' }
+  ]);
+  const [selectedSalespersonId, setSelectedSalespersonId] = useState<string>('ALL');
   const [loadingLeads, setLoadingLeads] = useState(true);
   const [activeTab, setActiveTab] = useState<'kanban' | 'table' | 'dashboard'>('kanban');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
@@ -24,12 +29,29 @@ export default function App() {
   const [isZipModalOpen, setIsZipModalOpen] = useState(false);
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
+  const [isSalesTeamModalOpen, setIsSalesTeamModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLeads();
     fetchTags();
+    fetchSalespeople();
   }, []);
+
+  const fetchSalespeople = async () => {
+    try {
+      const res = await fetch('/api/salespeople');
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setSalespeople(data);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao buscar vendedores:', err);
+    }
+  };
 
   const fetchLeads = async () => {
     setLoadingLeads(true);
@@ -92,6 +114,35 @@ export default function App() {
     }
   };
 
+  // Atribuir lead a um vendedor específico
+  const handleReassignLead = async (leadId: string, salespersonId: string, salespersonName: string) => {
+    // Atualização otimista na UI
+    setLeads((prev) =>
+      prev.map((l) => (l.id === leadId ? { ...l, salespersonId, salespersonName } : l))
+    );
+
+    if (selectedLeadForDetail && selectedLeadForDetail.id === leadId) {
+      setSelectedLeadForDetail((prev) => prev ? { ...prev, salespersonId, salespersonName } : null);
+    }
+
+    try {
+      const res = await fetch(`/api/leads/${leadId}/assign`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ salespersonId, salespersonName })
+      });
+
+      if (!res.ok) {
+        throw new Error('Erro ao atribuir vendedor.');
+      }
+      fetchSalespeople();
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao reatribuir vendedor.');
+      fetchLeads();
+    }
+  };
+
   // Registrar ligação para o lead
   const handleAddCallLog = async (leadId: string, tag: string, comment: string, durationSeconds?: number, followUpAt?: string) => {
     const res = await fetch(`/api/leads/${leadId}/calls`, {
@@ -102,6 +153,7 @@ export default function App() {
 
     if (res.ok) {
       fetchLeads(); // Atualiza contagem
+      fetchSalespeople();
     } else {
       throw new Error('Erro ao salvar ligação.');
     }
@@ -115,6 +167,7 @@ export default function App() {
         if (res.ok) {
           setLeads((prev) => prev.filter((l) => l.id !== leadId));
           showToast('Lead removido com sucesso!');
+          fetchSalespeople();
         }
       } catch (err) {
         console.error(err);
@@ -132,6 +185,7 @@ export default function App() {
         const data = await res.json();
         showToast(data.message || 'Leads de exemplo carregados!');
         fetchLeads();
+        fetchSalespeople();
       } else {
         showToast('Erro ao carregar resposta do servidor.');
       }
@@ -141,48 +195,133 @@ export default function App() {
     }
   };
 
-  // Filter leads by selected tags
+  // Filter leads by selected tags AND selected salesperson
   const displayedLeads = leads.filter((l) => {
+    // 1. Salesperson filter
+    if (selectedSalespersonId !== 'ALL') {
+      const sellerId = l.salespersonId || 'seller-thomas';
+      if (sellerId !== selectedSalespersonId) return false;
+    }
+
+    // 2. Tag filter
     if (selectedTagFilters.length === 0) return true;
     if (!l.lastCallTag) return false;
     const lTags = l.lastCallTag.split(',').map((t) => t.trim());
     return selectedTagFilters.some((fTag) => lTags.includes(fTag));
   });
 
+  const activeSalesperson = salespeople.find((s) => s.id === selectedSalespersonId);
+
   return (
-    <div className="flex h-screen bg-[#f8f9fa] text-neutral-900 font-sans antialiased overflow-hidden">
+    <div className="flex flex-col xl:flex-row h-screen bg-[#f8f9fa] text-neutral-900 font-sans antialiased overflow-hidden">
       {/* Sidebar de Navegação */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenZipModal={() => setIsZipModalOpen(true)}
         onOpenTagsModal={() => setIsTagsModalOpen(true)}
+        onOpenSalesTeamModal={() => setIsSalesTeamModalOpen(true)}
         onSeedSamples={handleSeedSamples}
         totalLeads={leads.length}
+        salespeopleCount={salespeople.length}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden">
-        {/* Top Navbar Header */}
-        <header className="bg-white border-b border-neutral-200 px-6 py-3 flex items-center justify-between shrink-0 shadow-2xs z-10">
-          <div>
-            <h2 className="text-sm font-bold text-neutral-900 tracking-tight">
-              {activeTab === 'kanban'
-                ? 'Pipeline Kanban de Vendas'
-                : activeTab === 'table'
-                ? 'Lista Completa de Leads'
-                : 'Dashboard Analítico de Vendas'}
-            </h2>
-            <p className="text-[11px] text-neutral-500">
-              {displayedLeads.length} de {leads.length} lead(s) exibido(s)
-              {selectedTagFilters.length > 0 && ` (filtrado por ${selectedTagFilters.length} etiqueta(s): ${selectedTagFilters.join(', ')})`}
-            </p>
+        {/* Top Navbar Header with Salesperson Selector */}
+        <header className="bg-white border-b border-neutral-200 px-3 md:px-6 py-2 md:py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0 shadow-2xs z-10">
+          <div className="min-w-0 flex items-center gap-3">
+            <div>
+              <h2 className="text-xs md:text-sm font-bold text-neutral-900 tracking-tight truncate">
+                {activeTab === 'kanban'
+                  ? 'Pipeline Kanban de Vendas'
+                  : activeTab === 'table'
+                  ? 'Lista Completa de Leads'
+                  : 'Dashboard Analítico de Vendas'}
+              </h2>
+              <p className="text-[10px] md:text-[11px] text-neutral-500 truncate">
+                {displayedLeads.length} de {leads.length} lead(s)
+                {selectedSalespersonId !== 'ALL' && activeSalesperson && ` • Carteira: ${activeSalesperson.name}`}
+                {selectedTagFilters.length > 0 && ` • (${selectedTagFilters.length} tag(s))`}
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Salesperson Quick Tabs / Selector */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center bg-neutral-100/90 p-1 rounded-xl border border-neutral-200 shadow-2xs">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider px-2 hidden sm:inline-block">
+                Vendedor:
+              </span>
+
+              {/* All Sellers Button */}
+              <button
+                onClick={() => setSelectedSalespersonId('ALL')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  selectedSalespersonId === 'ALL'
+                    ? 'bg-white text-neutral-900 shadow-2xs font-bold'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+                title="Visualizar leads de todos os vendedores"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Todos</span>
+                <span className="text-[10px] font-mono bg-neutral-200 text-neutral-700 px-1.5 py-0.2 rounded-full font-bold">
+                  {leads.length}
+                </span>
+              </button>
+
+              {/* Individual Salesperson Pills */}
+              {salespeople.map((seller) => {
+                const sellerLeadCount = leads.filter(l => (l.salespersonId || 'seller-thomas') === seller.id).length;
+                const isSelected = selectedSalespersonId === seller.id;
+
+                return (
+                  <button
+                    key={seller.id}
+                    onClick={() => setSelectedSalespersonId(seller.id)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      isSelected
+                        ? 'bg-white text-blue-700 shadow-2xs ring-1 ring-neutral-200 font-bold'
+                        : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                  >
+                    <span 
+                      className="w-2.5 h-2.5 rounded-full shrink-0" 
+                      style={{ backgroundColor: seller.color || '#0284c7' }}
+                    />
+                    <span className="truncate max-w-[90px]">{seller.name}</span>
+                    <span 
+                      className="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold"
+                      style={{
+                        backgroundColor: isSelected ? seller.bgColor || '#e0f2fe' : '#e5e7eb',
+                        color: isSelected ? seller.color || '#0284c7' : '#374151'
+                      }}
+                    >
+                      {sellerLeadCount}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Manage Sales Team & Distribute Leads Action Button */}
             <button
-              onClick={fetchLeads}
-              className="p-1.5 rounded-lg border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition-colors"
+              onClick={() => setIsSalesTeamModalOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
+              title="Cadastrar vendedores e dividir carteira de novos leads"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Equipe & Distribuir</span>
+            </button>
+
+            {/* Refresh Button */}
+            <button
+              onClick={() => {
+                fetchLeads();
+                fetchSalespeople();
+              }}
+              className="p-1.5 rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition-colors"
               title="Atualizar dados"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loadingLeads ? 'animate-spin' : ''}`} />
@@ -193,7 +332,7 @@ export default function App() {
         {/* Barra de Métricas & Filtros de Vendas (oculta no Dashboard para evitar duplicidade) */}
         {activeTab !== 'dashboard' && (
           <MetricsBar
-            leads={leads}
+            leads={displayedLeads}
             tags={tags}
             selectedTagFilters={selectedTagFilters}
             onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
@@ -203,7 +342,7 @@ export default function App() {
         )}
 
         {/* View Content */}
-        <div className="flex-1 p-4 sm:p-5 overflow-x-auto overflow-y-auto">
+        <div className="flex-1 p-2 sm:p-4 md:p-5 overflow-x-auto overflow-y-auto">
           {loadingLeads && leads.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-neutral-400">
               <RefreshCw className="w-6 h-6 animate-spin mb-2" />
@@ -229,7 +368,7 @@ export default function App() {
             />
           ) : (
             <AnalyticsDashboard
-              leads={leads}
+              leads={displayedLeads}
               tags={tags}
               onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
               onShowToast={showToast}
@@ -243,12 +382,24 @@ export default function App() {
         isOpen={!!selectedLeadForDetail}
         onClose={() => setSelectedLeadForDetail(null)}
         lead={selectedLeadForDetail}
-        allLeads={leads}
+        allLeads={displayedLeads}
         onSelectLead={(nextLead) => setSelectedLeadForDetail(nextLead)}
         tags={tags}
+        salespeople={salespeople}
         onOpenTagsModal={() => setIsTagsModalOpen(true)}
         onAddCallLog={handleAddCallLog}
         onUpdateColumn={handleUpdateLeadColumn}
+        onReassignLead={handleReassignLead}
+        onShowToast={showToast}
+      />
+
+      <SalesTeamModal
+        isOpen={isSalesTeamModalOpen}
+        onClose={() => setIsSalesTeamModalOpen(false)}
+        salespeople={salespeople}
+        leads={leads}
+        onRefreshSalespeople={fetchSalespeople}
+        onRefreshLeads={fetchLeads}
         onShowToast={showToast}
       />
 
@@ -263,14 +414,20 @@ export default function App() {
       <ZipUploadModal
         isOpen={isZipModalOpen}
         onClose={() => setIsZipModalOpen(false)}
-        onImportComplete={fetchLeads}
+        onImportComplete={() => {
+          fetchLeads();
+          fetchSalespeople();
+        }}
         onShowToast={showToast}
       />
 
       <JsonBatchUpdateModal
         isOpen={isJsonModalOpen}
         onClose={() => setIsJsonModalOpen(false)}
-        onUpdateComplete={fetchLeads}
+        onUpdateComplete={() => {
+          fetchLeads();
+          fetchSalespeople();
+        }}
         onShowToast={showToast}
       />
 
@@ -279,4 +436,5 @@ export default function App() {
     </div>
   );
 }
+
 

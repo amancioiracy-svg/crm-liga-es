@@ -27,6 +27,24 @@ export interface CustomTag {
   createdAt?: string;
 }
 
+export interface Salesperson {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  color: string;
+  bgColor: string;
+  isDefault?: boolean;
+  createdAt?: string;
+}
+
+export interface DistributeLeadsParams {
+  targetSalespersonId: string;
+  mode: 'percentage' | 'count';
+  value: number;
+  sourceSalespersonId?: string;
+}
+
 export type CallTag = string;
 
 export interface CallLog {
@@ -51,6 +69,8 @@ export interface Lead {
   lastCallAt?: string;
   lastCallTag?: string;
   nextFollowUpAt?: string;
+  salespersonId?: string;
+  salespersonName?: string;
   calls?: CallLog[];
 }
 
