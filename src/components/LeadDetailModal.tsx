@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Lead, CallLog, CustomTag, PIPELINE_COLUMNS, ColumnStatus, Salesperson } from '../types';
 import { 
   X, Phone, ExternalLink, Calendar, MessageSquare, Plus, CheckCircle2, 
   QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall, PhoneOff,
-  CalendarClock, AlertTriangle, Bell, User
+  CalendarClock, AlertTriangle, Bell, User, Sparkles, ChevronRight, Zap, History
 } from 'lucide-react';
 import { getWhatsAppUrl, getDialerTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
@@ -55,6 +55,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [loadingCalls, setLoadingCalls] = useState(false);
   const [submittingCall, setSubmittingCall] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [autoDialOnNext, setAutoDialOnNext] = useState(true);
 
   // Timer states
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -65,13 +66,16 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   // Follow-up state
   const [followUpDateTime, setFollowUpDateTime] = useState<string>('');
 
+  // Active lead ID tracker to detect automated transitions
+  const lastLeadIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (tags.length > 0 && selectedTags.length === 0) {
       setSelectedTags([tags[0].name]);
     }
   }, [tags]);
 
-  // Reset/restore states when lead changes
+  // Reset / initialize state when lead changes
   useEffect(() => {
     if (lead) {
       setSelectedColumn(lead.columnStatus);
@@ -79,18 +83,45 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       setComment('');
       setFollowUpDateTime('');
 
-      // Clean reset tags for THIS lead
+      // Clean default tag for THIS lead
       if (tags.length > 0) {
         setSelectedTags([tags[0].name]);
       } else {
         setSelectedTags([]);
       }
 
-      // Restore active/paused call timer from localStorage if exists for this lead
-      const savedCall = localStorage.getItem(`crm_timer_${lead.id}`);
-      if (savedCall) {
+      // Check if this transition was marked for auto-dial/auto-start
+      const autoDialPayload = localStorage.getItem(`crm_autodial_${lead.id}`);
+      const savedTimer = localStorage.getItem(`crm_timer_${lead.id}`);
+
+      if (autoDialPayload) {
+        // Auto-started transition from "Próximo Lead"
+        localStorage.removeItem(`crm_autodial_${lead.id}`);
+        const now = Date.now();
+        setCallStartTime(now);
+        setAccumulatedSeconds(0);
+        setTimerSeconds(0);
+        setIsTimerRunning(true);
+
+        localStorage.setItem(`crm_timer_${lead.id}`, JSON.stringify({
+          startTime: now,
+          accum: 0,
+          isRunning: true
+        }));
+
+        // Advance column if needed
+        const nextCol = getNextColumnForStartCall(lead.columnStatus);
+        if (nextCol !== lead.columnStatus) {
+          setSelectedColumn(nextCol);
+        }
+
+        // Auto-trigger mobile phone call
+        if (lead.phoneNumber) {
+          window.location.href = getDialerTelLink(lead.phoneNumber);
+        }
+      } else if (savedTimer) {
         try {
-          const { startTime, accum, isRunning } = JSON.parse(savedCall);
+          const { startTime, accum, isRunning } = JSON.parse(savedTimer);
           setCallStartTime(startTime);
           setAccumulatedSeconds(accum || 0);
           setIsTimerRunning(Boolean(isRunning));
@@ -113,10 +144,12 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
         setTimerSeconds(0);
         setIsTimerRunning(false);
       }
+
+      lastLeadIdRef.current = lead.id;
     }
   }, [lead?.id]);
 
-  // Real-time Timer Ticker (calculates exact seconds based on Date.now())
+  // Real-time Timer Ticker
   useEffect(() => {
     let interval: any = null;
     if (isTimerRunning && callStartTime) {
@@ -176,7 +209,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     const nextCol = getNextColumnForStartCall(selectedColumn);
     if (nextCol !== selectedColumn) {
       setSelectedColumn(nextCol);
-      onShowToast(`Ligação iniciada! Etapa avançada automaticamente para "${nextCol}".`);
+      onShowToast(`Chamada iniciada! Etapa avançada para "${nextCol}".`);
     } else {
       onShowToast('Cronômetro de ligação iniciado!');
     }
@@ -215,6 +248,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     setTimerSeconds(0);
     if (lead) {
       localStorage.removeItem(`crm_timer_${lead.id}`);
+      localStorage.removeItem(`crm_autodial_${lead.id}`);
     }
   };
 
@@ -245,7 +279,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       if (selectedTags.length > 1) {
         setSelectedTags(selectedTags.filter((t) => t !== tagName));
       } else {
-        onShowToast('Selecione pelo menos uma etiqueta para a ligação.');
+        onShowToast('Selecione pelo menos uma etiqueta.');
       }
     } else {
       setSelectedTags([...selectedTags, tagName]);
@@ -278,26 +312,21 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       const formattedTime = formatDuration(finalDuration);
 
       if (advanceToNext && nextLead && onSelectLead) {
-        onShowToast(`Ligação salva (${formattedTime})! Avançando para "${nextLead.name}"...`);
+        onShowToast(`Ligação salva (${formattedTime})! Discaremos para "${nextLead.name}" agora...`);
         localStorage.removeItem(`crm_timer_${lead.id}`);
-        setCallStartTime(null);
-        setAccumulatedSeconds(0);
-        setTimerSeconds(0);
-        setFollowUpDateTime('');
-        setComment('');
+        localStorage.removeItem(`crm_autodial_${lead.id}`);
 
-        // Auto-start timer for next lead!
-        const now = Date.now();
-        localStorage.setItem(`crm_timer_${nextLead.id}`, JSON.stringify({
-          startTime: now,
-          accum: 0,
-          isRunning: true
-        }));
+        // Set auto-dial trigger for the next lead
+        if (autoDialOnNext) {
+          localStorage.setItem(`crm_autodial_${nextLead.id}`, 'true');
+        }
+
         onSelectLead(nextLead);
       } else {
         onShowToast(`Ligação registrada com sucesso! Duração: ${formattedTime}`);
         await fetchCallHistory(lead.id);
         localStorage.removeItem(`crm_timer_${lead.id}`);
+        localStorage.removeItem(`crm_autodial_${lead.id}`);
         setCallStartTime(null);
         setAccumulatedSeconds(0);
         setIsTimerRunning(false);
@@ -346,151 +375,178 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   return (
     <>
       <div 
-        className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
+        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 overflow-hidden animate-in fade-in duration-150"
         onClick={onClose}
       >
         <div 
-          className="bg-white rounded-xl shadow-xl border border-neutral-200 max-w-2xl w-full p-3.5 sm:p-6 relative my-2 sm:my-8 max-h-[95vh] sm:max-h-[90vh] flex flex-col"
+          className="bg-white w-full sm:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[92vh] rounded-t-2xl sm:rounded-2xl shadow-2xl border-t sm:border border-neutral-200 flex flex-col relative overflow-hidden transition-all"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Top Bar / Header */}
-          <div className="flex items-start justify-between pb-3 sm:pb-4 border-b border-neutral-100">
-            <div>
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1">
-                <h2 className="text-base sm:text-lg font-bold text-neutral-900 leading-tight">{lead.name}</h2>
-                <span className="text-[10px] font-mono text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded">
-                  ID: {lead.id}
-                </span>
-                {allLeads.length > 0 && (
-                  <span className="text-[10px] font-medium text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
-                    Lead {currentLeadIndex + 1} de {allLeads.length}
+          {/* ========================================================= */}
+          {/* 1. TOP HEADER (100% FIXO - NUNCA SOME NO SCROLL)          */}
+          {/* ========================================================= */}
+          <header className="bg-white border-b border-neutral-200 px-3.5 sm:px-5 py-3 shrink-0 z-20 shadow-2xs">
+            <div className="flex items-start justify-between gap-2.5">
+              <div className="min-w-0 flex-1">
+                {/* Top badges */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                  {allLeads.length > 0 && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                      Lead {currentLeadIndex + 1} de {allLeads.length}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-mono text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded">
+                    ID: {lead.id}
                   </span>
-                )}
+                  <span className="text-[10px] font-semibold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full">
+                    {lead.columnStatus}
+                  </span>
+                </div>
+
+                {/* Lead Name */}
+                <h2 className="text-base sm:text-lg font-bold text-neutral-900 leading-tight truncate">
+                  {lead.name}
+                </h2>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-neutral-600 mt-1">
-                {lead.phoneNumber ? (
-                  <a
-                    href={getDialerTelLink(lead.phoneNumber)}
-                    onClick={() => handleStartCall()}
-                    className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors"
-                    title="Discar no celular (adiciona 0 automaticamente na frente)"
-                  >
-                    <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
-                    {lead.phoneNumber}
-                  </a>
-                ) : (
-                  <span className="flex items-center gap-1 font-mono text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded border border-neutral-200 cursor-not-allowed">
-                    <PhoneOff className="w-3.5 h-3.5 text-neutral-400" />
-                    (Sem telefone)
-                  </span>
-                )}
-
-                {lead.publicUrl && (
-                  <a
-                    href={lead.publicUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 text-blue-600 hover:underline font-medium"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Abrir Site
-                  </a>
-                )}
-
-                <button
-                  onClick={() => {
-                    handleStartCall(false);
-                    const template = getStoredWhatsAppTemplate();
-                    const msgText = formatWhatsAppMessage(template, {
-                      name: lead.name,
-                      site: lead.publicUrl || '',
-                      salesperson: lead.salespersonName || 'Thomas'
-                    });
-                    const wa = getWhatsAppUrl(lead.phoneNumber, msgText);
-                    window.open(wa, 'whatsapp');
-                  }}
-                  className="text-emerald-600 hover:underline font-medium flex items-center gap-1"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  WhatsApp
-                </button>
-
-                <button
-                  onClick={() => {
-                    handleStartCall(false);
-                    setShowQrModal(true);
-                  }}
-                  className="hidden sm:inline-flex items-center gap-1 text-neutral-700 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 px-2 py-0.5 rounded font-medium transition-colors"
-                >
-                  <QrCode className="w-3.5 h-3.5 text-neutral-600" />
-                  QR Code
-                </button>
-              </div>
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors shrink-0"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+            {/* Direct Quick Action Bar (Discar, WhatsApp, Site) */}
+            <div className="flex flex-wrap items-center gap-2 mt-2.5 pt-2.5 border-t border-neutral-100">
+              {/* Dial Button */}
+              {lead.phoneNumber ? (
+                <a
+                  href={getDialerTelLink(lead.phoneNumber)}
+                  onClick={() => handleStartCall(true)}
+                  className="flex-1 min-w-[140px] flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-xs transition-all touch-manipulation"
+                  title="Discar no celular com 0 automático na frente"
+                >
+                  <PhoneCall className="w-4 h-4 text-emerald-100 animate-bounce" />
+                  <span className="font-mono">{lead.phoneNumber}</span>
+                </a>
+              ) : (
+                <div className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-neutral-100 text-neutral-400 font-medium text-xs border border-neutral-200">
+                  <PhoneOff className="w-4 h-4" />
+                  <span>Sem telefone</span>
+                </div>
+              )}
 
-          {/* Body Content */}
-          <div className="overflow-y-auto space-y-5 pt-4 pr-1">
-            {/* Widget de Cronômetro de Ligação */}
-            <div className="bg-neutral-900 text-white rounded-xl p-4 shadow-sm border border-neutral-800 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
-                  isTimerRunning ? 'bg-emerald-500/20 text-emerald-400 animate-pulse' : 'bg-neutral-800 text-neutral-400'
+              {/* WhatsApp Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleStartCall(false);
+                  const template = getStoredWhatsAppTemplate();
+                  const msgText = formatWhatsAppMessage(template, {
+                    name: lead.name,
+                    site: lead.publicUrl || '',
+                    salesperson: lead.salespersonName || 'Thomas'
+                  });
+                  const wa = getWhatsAppUrl(lead.phoneNumber, msgText);
+                  window.open(wa, '_blank');
+                }}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs border border-emerald-200 shadow-2xs transition-colors shrink-0 touch-manipulation"
+              >
+                <MessageSquare className="w-4 h-4 text-emerald-600" />
+                <span>WhatsApp</span>
+              </button>
+
+              {/* Site Link */}
+              {lead.publicUrl && (
+                <a
+                  href={lead.publicUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs border border-blue-200 transition-colors shrink-0 touch-manipulation"
+                  title="Abrir site da empresa"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="hidden xs:inline">Site</span>
+                </a>
+              )}
+
+              {/* QR Code */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleStartCall(false);
+                  setShowQrModal(true);
+                }}
+                className="hidden md:flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium text-xs transition-colors shrink-0"
+              >
+                <QrCode className="w-3.5 h-3.5 text-neutral-600" />
+                <span>QR</span>
+              </button>
+            </div>
+          </header>
+
+          {/* ========================================================= */}
+          {/* 2. BODY CONTENT (SCROLL SUAVE E ISOLADO)                  */}
+          {/* ========================================================= */}
+          <div className="flex-1 overflow-y-auto overscroll-contain p-3.5 sm:p-5 space-y-4">
+            
+            {/* Widget Compacto de Cronômetro de Chamada */}
+            <div className="bg-neutral-950 text-white rounded-xl p-3 sm:p-4 shadow-sm border border-neutral-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-all ${
+                  isTimerRunning ? 'bg-emerald-500/20 text-emerald-400 ring-2 ring-emerald-500/40 animate-pulse' : 'bg-neutral-900 text-neutral-400'
                 }`}>
                   <Clock className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
-                      Cronômetro de Chamada
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      Cronômetro
                     </span>
                     {isTimerRunning ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400 bg-emerald-950/80 px-2 py-0.2 rounded-full border border-emerald-500/30">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.2 rounded-full border border-emerald-500/30">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
                         Em Ligação...
                       </span>
                     ) : timerSeconds > 0 ? (
-                      <span className="text-[10px] font-medium text-amber-400 bg-amber-950/80 px-2 py-0.2 rounded-full border border-amber-500/30">
+                      <span className="text-[10px] font-semibold text-amber-400 bg-amber-950/80 px-2 py-0.2 rounded-full border border-amber-500/30">
                         Pausado
                       </span>
                     ) : (
-                      <span className="text-[10px] font-medium text-neutral-400">
-                        Aguardando início
+                      <span className="text-[10px] font-medium text-neutral-500">
+                        Pronto
                       </span>
                     )}
                   </div>
-                  <div className="text-2xl font-mono font-bold tracking-tight text-white mt-0.5">
+                  <div className="text-xl sm:text-2xl font-mono font-bold tracking-tight text-white mt-0.5">
                     {formattedClock} <span className="text-xs text-neutral-400 font-sans font-normal">({formatDuration(timerSeconds)})</span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Timer Controls */}
+              <div className="flex items-center gap-1.5 shrink-0">
                 {!isTimerRunning ? (
                   <button
                     type="button"
-                    onClick={handleStartCall}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors shadow-2xs"
+                    onClick={() => handleStartCall(false)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all shadow-xs touch-manipulation"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
-                    {timerSeconds > 0 ? 'Continuar' : 'Iniciar Chamada'}
+                    <span>{timerSeconds > 0 ? 'Continuar' : 'Iniciar'}</span>
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={handlePauseTimer}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-amber-950 bg-amber-400 hover:bg-amber-300 rounded-xl transition-all shadow-xs touch-manipulation"
                   >
                     <Pause className="w-3.5 h-3.5 fill-current" />
-                    Pausar
+                    <span>Pausar</span>
                   </button>
                 )}
 
@@ -498,7 +554,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   type="button"
                   onClick={handleResetTimer}
                   disabled={timerSeconds === 0 && !isTimerRunning}
-                  className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-30"
+                  className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-xl transition-colors disabled:opacity-20 touch-manipulation"
                   title="Zerar Cronômetro"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -506,12 +562,12 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               </div>
             </div>
 
-            {/* Destaque de Agendamento Ativo de Follow-Up */}
+            {/* Destaque de Agendamento Ativo de Follow-Up (se houver) */}
             {lead.nextFollowUpAt && (() => {
               const info = getFollowUpInfo(lead.nextFollowUpAt);
               if (info.status === 'NONE') return null;
               return (
-                <div className={`p-3 rounded-lg border flex items-center justify-between gap-3 text-xs ${
+                <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
                   info.status === 'OVERDUE'
                     ? 'bg-rose-50 border-rose-200 text-rose-900'
                     : info.status === 'TODAY'
@@ -525,8 +581,8 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       <CalendarClock className="w-4 h-4 text-amber-600 shrink-0" />
                     )}
                     <div>
-                      <span className="font-bold block text-[11px] uppercase tracking-wide">
-                        {info.status === 'OVERDUE' ? '⚠️ Retorno Atrasado!' : info.status === 'TODAY' ? '🔔 Retorno Agendado para Hoje!' : '📅 Lembrete de Retorno Futuro'}
+                      <span className="font-bold block text-[10px] uppercase tracking-wide">
+                        {info.status === 'OVERDUE' ? '⚠️ Retorno Atrasado!' : info.status === 'TODAY' ? '🔔 Retorno para Hoje!' : '📅 Lembrete de Retorno'}
                       </span>
                       <span className="font-medium">{info.label}</span>
                     </div>
@@ -535,32 +591,182 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               );
             })()}
 
-            {/* Status do Lead, Vendedor Responsável & Seletor de Coluna */}
-            <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200/80 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-3 text-xs">
+            {/* Form de Registro da Ligação */}
+            <form onSubmit={handleSubmitCallForm} className="bg-white border border-neutral-200 rounded-xl p-3.5 sm:p-4 shadow-2xs space-y-3.5">
+              
+              {/* Seletor de Etiquetas / Resultado */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-neutral-800 flex items-center gap-1">
+                    <TagIcon className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Resultado da Ligação *</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={onOpenTagsModal}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline"
+                  >
+                    + Gerenciar Tags
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {tags.map((t) => {
+                    const isSelected = selectedTags.includes(t.name);
+                    return (
+                      <button
+                        type="button"
+                        key={t.id}
+                        onClick={() => handleToggleTag(t.name)}
+                        style={
+                          isSelected
+                            ? { backgroundColor: t.bgColor, color: t.color, borderColor: t.color }
+                            : undefined
+                        }
+                        className={`text-xs min-h-[38px] px-3 py-2 rounded-xl border transition-all flex items-center justify-between gap-1.5 touch-manipulation ${
+                          isSelected
+                            ? 'font-bold shadow-xs ring-2 ring-blue-500/20'
+                            : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:bg-neutral-100 active:bg-neutral-200'
+                        }`}
+                      >
+                        <span className="truncate">{t.name}</span>
+                        <span className="text-xs font-mono shrink-0">
+                          {isSelected ? '✓' : '+'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Agendamento de Retorno / Follow-Up */}
+              <div className="bg-neutral-50/90 p-3 rounded-xl border border-neutral-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                    <CalendarClock className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Agendar Retorno (Opcional)</span>
+                  </label>
+
+                  {followUpDateTime && (
+                    <button
+                      type="button"
+                      onClick={() => setFollowUpDateTime('')}
+                      className="text-[10px] text-rose-600 hover:underline font-bold"
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+
+                <input
+                  type="datetime-local"
+                  value={followUpDateTime}
+                  onChange={(e) => setFollowUpDateTime(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-white border border-neutral-300 rounded-lg text-neutral-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+
+                {/* Atalhos Rápidos com Scroll Horizontal */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider shrink-0">
+                    Atalhos:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPresetFollowUp('1h')}
+                    className="text-[11px] font-semibold bg-white hover:bg-neutral-100 border border-neutral-200 px-2.5 py-1 rounded-lg text-neutral-700 shrink-0 shadow-2xs active:bg-neutral-200"
+                  >
+                    +1 Hora
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetFollowUp('today17')}
+                    className="text-[11px] font-semibold bg-white hover:bg-neutral-100 border border-neutral-200 px-2.5 py-1 rounded-lg text-neutral-700 shrink-0 shadow-2xs active:bg-neutral-200"
+                  >
+                    Hoje 17:00
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetFollowUp('tomorrow9')}
+                    className="text-[11px] font-semibold bg-white hover:bg-neutral-100 border border-neutral-200 px-2.5 py-1 rounded-lg text-neutral-700 shrink-0 shadow-2xs active:bg-neutral-200"
+                  >
+                    Amanhã 09:00
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetFollowUp('1d')}
+                    className="text-[11px] font-semibold bg-white hover:bg-neutral-100 border border-neutral-200 px-2.5 py-1 rounded-lg text-neutral-700 shrink-0 shadow-2xs active:bg-neutral-200"
+                  >
+                    +1 Dia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetFollowUp('2d')}
+                    className="text-[11px] font-semibold bg-white hover:bg-neutral-100 border border-neutral-200 px-2.5 py-1 rounded-lg text-neutral-700 shrink-0 shadow-2xs active:bg-neutral-200"
+                  >
+                    +2 Dias
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetFollowUp('1w')}
+                    className="text-[11px] font-semibold bg-white hover:bg-neutral-100 border border-neutral-200 px-2.5 py-1 rounded-lg text-neutral-700 shrink-0 shadow-2xs active:bg-neutral-200"
+                  >
+                    +1 Sem
+                  </button>
+                </div>
+              </div>
+
+              {/* Comentários / Observações */}
+              <div>
+                <label className="block text-xs font-bold text-neutral-800 mb-1">
+                  Comentários / Observações (Opcional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Ex: Cliente atendeu, pediu para retornar no final da tarde ou enviar proposta pelo WhatsApp..."
+                  className="w-full text-xs p-2.5 bg-white border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-neutral-400"
+                />
+              </div>
+
+              {/* Estágio do Pipeline & Vendedor Responsável */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-neutral-100">
                 <div>
-                  <span className="text-neutral-500">Estágio:</span>
-                  <span className="ml-1.5 font-bold text-neutral-800">{lead.columnStatus}</span>
+                  <label className="block text-[11px] font-bold text-neutral-600 mb-1">
+                    Mover para Etapa:
+                  </label>
+                  <select
+                    value={selectedColumn}
+                    onChange={handleColumnChange}
+                    className="w-full text-xs bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 text-neutral-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    {PIPELINE_COLUMNS.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {salespeople.length > 0 && (
-                  <div className="flex items-center gap-1.5 border-l border-neutral-200 pl-3">
-                    <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span className="text-neutral-500">Vendedor:</span>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-600 mb-1">
+                      Vendedor Responsável:
+                    </label>
                     <select
                       value={lead.salespersonId || 'seller-thomas'}
                       onChange={async (e) => {
                         const newSellerId = e.target.value;
-                        const target = salespeople.find(s => s.id === newSellerId);
+                        const target = salespeople.find((s) => s.id === newSellerId);
                         const newSellerName = target ? target.name : 'Thomas';
                         if (onReassignLead) {
                           await onReassignLead(lead.id, newSellerId, newSellerName);
                           onShowToast(`Lead atribuído a ${newSellerName}`);
                         }
                       }}
-                      className="text-xs bg-white border border-neutral-300 rounded px-2 py-0.5 font-semibold text-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                      className="w-full text-xs bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 font-semibold text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     >
-                      {salespeople.map(s => (
+                      {salespeople.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name} {s.isDefault ? '(Principal)' : ''}
                         </option>
@@ -569,238 +775,46 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   </div>
                 )}
               </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-neutral-500 font-medium">Mover para:</label>
-                <select
-                  value={selectedColumn}
-                  onChange={handleColumnChange}
-                  className="text-xs bg-white border border-neutral-300 rounded-md px-2.5 py-1 text-neutral-800 font-medium focus:outline-none focus:ring-1 focus:ring-neutral-400"
-                >
-                  {PIPELINE_COLUMNS.map((col) => (
-                    <option key={col} value={col}>
-                      {col}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Form de Nova Ligação */}
-            <div className="bg-white border border-neutral-200 rounded-lg p-4 shadow-2xs space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-neutral-800 flex items-center gap-1.5">
-                  <Plus className="w-4 h-4 text-neutral-600" />
-                  Registrar Resultado da Ligação
-                </h3>
-
-                <button
-                  type="button"
-                  onClick={onOpenTagsModal}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                >
-                  <TagIcon className="w-3 h-3" />
-                  + Gerenciar Tags
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmitCallForm} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                    Resultado / Etiqueta da Ligação * <span className="text-[10px] text-neutral-400 font-normal">(Você pode selecionar mais de uma tag)</span>
-                  </label>
-                  
-                  <div className="flex flex-wrap gap-1.5">
-                    {tags.map((t) => {
-                      const isSelected = selectedTags.includes(t.name);
-                      return (
-                        <button
-                          type="button"
-                          key={t.id}
-                          onClick={() => handleToggleTag(t.name)}
-                          style={
-                            isSelected
-                              ? { backgroundColor: t.bgColor, color: t.color, borderColor: t.color }
-                              : undefined
-                          }
-                          className={`text-xs px-2.5 py-1 rounded-md border transition-all inline-flex items-center gap-1 ${
-                            isSelected
-                              ? 'font-bold shadow-2xs scale-102 ring-2 ring-black/10'
-                              : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:bg-neutral-100'
-                          }`}
-                        >
-                          {isSelected ? '✓ ' : '+ '}
-                          {t.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Agendamento de Follow-Up (Data e Hora de Retorno) */}
-                <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-200/80 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-neutral-800 flex items-center gap-1.5">
-                      <CalendarClock className="w-3.5 h-3.5 text-blue-600" />
-                      Agendar Retorno / Follow-Up (Data e Hora)
-                    </label>
-
-                    {followUpDateTime && (
-                      <button
-                        type="button"
-                        onClick={() => setFollowUpDateTime('')}
-                        className="text-[10px] text-rose-600 hover:underline font-medium"
-                      >
-                        Limpar Agendamento
-                      </button>
-                    )}
-                  </div>
-
-                  <input
-                    type="datetime-local"
-                    value={followUpDateTime}
-                    onChange={(e) => setFollowUpDateTime(e.target.value)}
-                    className="w-full text-xs p-2 bg-white border border-neutral-300 rounded-md text-neutral-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-
-                  {/* Atalhos Rápidos de Agendamento */}
-                  <div className="flex flex-wrap items-center gap-1 pt-1">
-                    <span className="text-[10px] text-neutral-400 font-medium mr-1">Atalhos:</span>
-                    <button
-                      type="button"
-                      onClick={() => setPresetFollowUp('1h')}
-                      className="text-[10px] bg-white hover:bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded text-neutral-700"
-                    >
-                      +1 Hora
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPresetFollowUp('today17')}
-                      className="text-[10px] bg-white hover:bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded text-neutral-700"
-                    >
-                      Hoje 17:00
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPresetFollowUp('1d')}
-                      className="text-[10px] bg-white hover:bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded text-neutral-700"
-                    >
-                      +1 Dia
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPresetFollowUp('tomorrow9')}
-                      className="text-[10px] bg-white hover:bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded text-neutral-700"
-                    >
-                      Amanhã 09:00
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPresetFollowUp('2d')}
-                      className="text-[10px] bg-white hover:bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded text-neutral-700"
-                    >
-                      +2 Dias
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPresetFollowUp('1w')}
-                      className="text-[10px] bg-white hover:bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded text-neutral-700"
-                    >
-                      +1 Semana
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">
-                    Comentários / Observações
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder="Ex: Cliente atendeu, gostou do site de demonstração e pediu para enviar mensagem por WhatsApp..."
-                    className="w-full text-xs p-2.5 bg-white border border-neutral-200 rounded-md focus:outline-none focus:ring-1 focus:ring-neutral-400 placeholder:text-neutral-400"
-                  />
-                </div>
-
-                {/* Botões de Ação na Ligação */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-100">
-                  <button
-                    type="submit"
-                    disabled={submittingCall}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-neutral-600" />
-                    Salvar Registro (Manter Aberto)
-                  </button>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={submittingCall}
-                      onClick={() => saveCallLog(true, false)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors shadow-2xs disabled:opacity-50"
-                    >
-                      <PhoneCall className="w-3.5 h-3.5" />
-                      Finalizar
-                    </button>
-
-                    {nextLead && onSelectLead && (
-                      <button
-                        type="button"
-                        disabled={submittingCall}
-                        onClick={() => saveCallLog(true, true)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-2xs disabled:opacity-50"
-                        title={`Salvar e ir para o próximo lead: ${nextLead.name}`}
-                      >
-                        <span>Próximo Lead</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </form>
-            </div>
+            </form>
 
             {/* Histórico Cronológico de Ligações */}
-            <div>
-              <h3 className="text-sm font-semibold text-neutral-800 mb-3 flex items-center gap-1.5">
-                <MessageSquare className="w-4 h-4 text-neutral-600" />
-                Histórico Cronológico de Ligações
+            <div className="pt-1">
+              <h3 className="text-xs font-bold text-neutral-800 mb-2.5 flex items-center gap-1.5 uppercase tracking-wider">
+                <History className="w-3.5 h-3.5 text-neutral-600" />
+                <span>Histórico de Ligações ({calls.length})</span>
               </h3>
 
               {loadingCalls ? (
-                <div className="text-xs text-neutral-400 py-4 text-center">
+                <div className="text-xs text-neutral-400 py-3 text-center">
                   Carregando histórico...
                 </div>
               ) : calls.length === 0 ? (
-                <div className="text-xs text-neutral-400 py-6 text-center border border-dashed border-neutral-200 rounded-lg bg-neutral-50/50">
-                  Nenhuma ligação registrada para este lead até o momento.
+                <div className="text-xs text-neutral-400 py-4 text-center border border-dashed border-neutral-200 rounded-xl bg-neutral-50">
+                  Nenhuma ligação registrada anteriormente para este lead.
                 </div>
               ) : (
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   {calls.map((c) => {
                     const cTags = c.tag ? c.tag.split(',').map((t) => t.trim()).filter(Boolean) : [];
                     return (
                       <div
                         key={c.id}
-                        className="p-3 bg-neutral-50 rounded-lg border border-neutral-200/70 text-xs"
+                        className="p-3 bg-neutral-50/90 rounded-xl border border-neutral-200/80 text-xs space-y-1.5"
                       >
-                        <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex flex-wrap items-center gap-1.5">
                             {cTags.map((tName, idx) => (
                               <span
                                 key={idx}
                                 style={getTagStyle(tName)}
-                                className="px-2 py-0.5 rounded text-[10px] font-semibold border border-black/5"
+                                className="px-2 py-0.5 rounded text-[10px] font-bold border border-black/5"
                               >
                                 {tName}
                               </span>
                             ))}
 
                             {c.durationSeconds ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-200/80 px-1.5 py-0.2 rounded font-mono">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-neutral-700 bg-neutral-200/80 px-1.5 py-0.5 rounded font-mono">
                                 <Clock className="w-3 h-3 text-neutral-500" />
                                 {formatDuration(c.durationSeconds)}
                               </span>
@@ -809,7 +823,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             {c.followUpAt ? (() => {
                               const fInfo = getFollowUpInfo(c.followUpAt);
                               return (
-                                <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.2 rounded border ${
+                                <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${
                                   fInfo.status === 'OVERDUE'
                                     ? 'bg-rose-100 text-rose-800 border-rose-200'
                                     : fInfo.status === 'TODAY'
@@ -823,19 +837,14 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             })() : null}
                           </div>
 
-                          <span className="flex items-center gap-1 text-[10px] text-neutral-400 font-mono">
-                            <Calendar className="w-3 h-3" />
+                          <span className="text-[10px] text-neutral-400 font-mono">
                             {new Date(c.createdAt).toLocaleString('pt-BR')}
                           </span>
                         </div>
 
-                        {c.comment ? (
-                          <p className="text-neutral-700 text-xs leading-relaxed mt-1">
+                        {c.comment && (
+                          <p className="text-neutral-700 text-xs leading-relaxed bg-white p-2 rounded-lg border border-neutral-200/60">
                             {c.comment}
-                          </p>
-                        ) : (
-                          <p className="text-neutral-400 italic text-[11px] mt-1">
-                            Sem observações gravadas.
                           </p>
                         )}
                       </div>
@@ -846,23 +855,84 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="pt-3 mt-3 border-t border-neutral-100 flex items-center justify-between">
-            <div className="text-xs text-neutral-400 font-medium">
-              {nextLead ? (
-                <span>Próximo lead na fila: <strong className="text-neutral-700">{nextLead.name}</strong></span>
-              ) : (
-                <span>Fim da lista de leads.</span>
+          {/* ========================================================= */}
+          {/* 3. BOTTOM FOOTER DOCK (100% FIXO NA ZONA DO POLEGAR)      */}
+          {/* ========================================================= */}
+          <footer className="bg-white border-t border-neutral-200 px-3.5 sm:px-5 py-2.5 sm:py-3 shrink-0 z-20 shadow-lg space-y-2">
+            
+            {/* Auto-dial toggle checkbox */}
+            <div className="flex items-center justify-between text-[11px] text-neutral-600 px-0.5">
+              <label className="flex items-center gap-1.5 cursor-pointer font-medium select-none">
+                <input
+                  type="checkbox"
+                  checked={autoDialOnNext}
+                  onChange={(e) => setAutoDialOnNext(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                />
+                <span className="flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
+                  Auto-discar e iniciar cronômetro no próximo lead
+                </span>
+              </label>
+
+              {nextLead && (
+                <span className="text-neutral-400 font-mono text-[10px] truncate max-w-[150px] hidden xs:inline">
+                  Próximo: {nextLead.name}
+                </span>
               )}
             </div>
 
-            <button
-              onClick={onClose}
-              className="px-4 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-md transition-colors"
-            >
-              Fechar
-            </button>
-          </div>
+            {/* Bottom Actions Row */}
+            <div className="flex items-center gap-2">
+              {/* Secondary: Just Save and Keep Open */}
+              <button
+                type="button"
+                disabled={submittingCall}
+                onClick={() => saveCallLog(false, false)}
+                className="px-3 py-2.5 rounded-xl border border-neutral-300 hover:bg-neutral-100 text-neutral-700 font-semibold text-xs transition-colors shrink-0 disabled:opacity-50 touch-manipulation"
+                title="Salvar registro e manter tela aberta"
+              >
+                Salvar
+              </button>
+
+              {/* Finish Current Lead Only */}
+              <button
+                type="button"
+                disabled={submittingCall}
+                onClick={() => saveCallLog(true, false)}
+                className="flex-1 min-w-[90px] py-2.5 px-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 active:bg-black text-white font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 touch-manipulation"
+                title="Salvar e fechar este lead"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Finalizar</span>
+              </button>
+
+              {/* PRIMARY ACTION: Finish & Advance to Next Lead (Disca na hora!) */}
+              {nextLead && onSelectLead ? (
+                <button
+                  type="button"
+                  disabled={submittingCall}
+                  onClick={() => saveCallLog(true, true)}
+                  className="flex-[1.5] py-2.5 px-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:from-blue-800 active:to-indigo-800 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 touch-manipulation"
+                  title={`Salvar e discar para o próximo lead: ${nextLead.name}`}
+                >
+                  <PhoneCall className="w-4 h-4 text-white animate-pulse" />
+                  <span>Finalizar & Próximo</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={submittingCall}
+                  onClick={() => saveCallLog(true, false)}
+                  className="flex-[1.5] py-2.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 touch-manipulation"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                  <span>Finalizar Lista</span>
+                </button>
+              )}
+            </div>
+          </footer>
         </div>
       </div>
 
@@ -876,4 +946,3 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     </>
   );
 };
-
