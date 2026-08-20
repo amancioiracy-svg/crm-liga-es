@@ -27,6 +27,8 @@ interface CallLogItem {
   leadName?: string;
   phoneNumber?: string;
   columnStatus?: string;
+  salespersonId?: string;
+  salespersonName?: string;
   tag: string;
   comment: string;
   durationSeconds?: number;
@@ -36,16 +38,20 @@ interface CallLogItem {
 
 interface AnalyticsDashboardProps {
   leads: Lead[];
+  allLeads?: Lead[];
   tags: CustomTag[];
   salespeople?: Salesperson[];
+  selectedSalespersonId?: string;
   onOpenDetails: (lead: Lead) => void;
   onShowToast: (msg: string) => void;
 }
 
 export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   leads,
+  allLeads = [],
   tags,
   salespeople = [],
+  selectedSalespersonId = 'ALL',
   onOpenDetails,
   onShowToast
 }) => {
@@ -54,12 +60,15 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 
   useEffect(() => {
     fetchCalls();
-  }, []);
+  }, [leads, selectedSalespersonId]);
 
   const fetchCalls = async () => {
     setLoadingCalls(true);
     try {
-      const res = await fetch('/api/calls');
+      const url = selectedSalespersonId && selectedSalespersonId !== 'ALL'
+        ? `/api/calls?salespersonId=${encodeURIComponent(selectedSalespersonId)}`
+        : '/api/calls';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setCalls(data);
@@ -517,8 +526,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
               </thead>
               <tbody className="divide-y divide-neutral-100 text-neutral-800 font-medium">
                 {salespeople.map((seller) => {
-                  const sLeads = leads.filter(l => (l.salespersonId || 'seller-thomas') === seller.id);
-                  const uncontacted = sLeads.filter(l => l.columnStatus === 'Leads' && l.callCount === 0).length;
+                  const baseLeads = allLeads.length > 0 ? allLeads : leads;
+                  const sLeads = baseLeads.filter(l => (l.salespersonId || 'seller-thomas') === seller.id);
+                  const uncontacted = sLeads.filter(l => l.columnStatus === 'Leads' && (!l.callCount || l.callCount === 0)).length;
                   const inProgress = sLeads.filter(l => ['Ligação 1', 'Ligação 2', 'Ligação 3', 'Ligação 4', 'Interessado'].includes(l.columnStatus)).length;
                   const closed = sLeads.filter(l => l.columnStatus === 'Fechado').length;
                   const rate = sLeads.length > 0 ? ((closed / sLeads.length) * 100).toFixed(1) : '0.0';

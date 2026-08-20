@@ -5,6 +5,8 @@ import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Fi
 interface CallLogItem {
   id: string;
   leadId: string;
+  salespersonId?: string;
+  salespersonName?: string;
   tag: string;
   durationSeconds?: number;
   createdAt: string;
@@ -13,6 +15,7 @@ interface CallLogItem {
 interface MetricsBarProps {
   leads: Lead[];
   tags: CustomTag[];
+  selectedSalespersonId?: string;
   selectedTagFilters: string[];
   onTagFilterChange: (tags: string[]) => void;
   onShowToast: (msg: string) => void;
@@ -22,6 +25,7 @@ interface MetricsBarProps {
 export const MetricsBar: React.FC<MetricsBarProps> = ({
   leads,
   tags,
+  selectedSalespersonId = 'ALL',
   selectedTagFilters,
   onTagFilterChange,
   onShowToast,
@@ -35,7 +39,7 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
 
   useEffect(() => {
     fetchCalls();
-  }, [leads]);
+  }, [leads, selectedSalespersonId]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -50,7 +54,10 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
   const fetchCalls = async () => {
     setLoadingCalls(true);
     try {
-      const res = await fetch('/api/calls');
+      const url = selectedSalespersonId && selectedSalespersonId !== 'ALL'
+        ? `/api/calls?salespersonId=${encodeURIComponent(selectedSalespersonId)}`
+        : '/api/calls';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setCalls(data);
@@ -62,7 +69,7 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
     }
   };
 
-  // 1. Ligações Hoje
+  // 1. Ligações Hoje (isolado por vendedor)
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayCalls = calls.filter((c) => {
     if (!c.createdAt) return false;
@@ -91,9 +98,9 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
     return `${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
   };
 
-  // 3. Taxa de Conversão (% de Leads em 'Ganha / Fechado')
+  // 3. Taxa de Conversão (% de Leads em 'Fechado' ou 'Ganha / Fechado')
   const totalLeads = leads.length;
-  const closedLeads = leads.filter((l) => l.columnStatus === 'Ganha / Fechado').length;
+  const closedLeads = leads.filter((l) => l.columnStatus === 'Fechado' || (l.columnStatus as string) === 'Ganha / Fechado').length;
   const conversionRate = totalLeads > 0 ? ((closedLeads / totalLeads) * 100).toFixed(1) : '0.0';
 
   // 4. Leads Estagnados (sem ligações ou sem contato nos últimos 3 dias)

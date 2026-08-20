@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Lead, ColumnStatus, CustomTag, Salesperson } from './types';
 import { Sidebar } from './components/Sidebar';
 import { KanbanBoard } from './components/KanbanBoard';
@@ -12,7 +12,8 @@ import { SalesTeamModal } from './components/SalesTeamModal';
 import { WhatsAppSettingsModal } from './components/WhatsAppSettingsModal';
 import { MetricsBar } from './components/MetricsBar';
 import { Toast } from './components/Toast';
-import { PhoneCall, Users, CheckCircle, RefreshCw, UserCheck, Share2, Plus } from 'lucide-react';
+import { PhoneCall, Users, CheckCircle, RefreshCw, UserCheck, Share2, Plus, ArrowLeft, ExternalLink } from 'lucide-react';
+import { getSalespersonSlug, matchSalespersonFromRoute } from './lib/salesperson';
 
 export default function App() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -21,6 +22,7 @@ export default function App() {
     { id: 'seller-thomas', name: 'Thomas', isDefault: true, color: '#0284c7', bgColor: '#e0f2fe' }
   ]);
   const [selectedSalespersonId, setSelectedSalespersonId] = useState<string>('ALL');
+  const [routeSalespersonSlug, setRouteSalespersonSlug] = useState<string | null>(null);
   const [loadingLeads, setLoadingLeads] = useState(true);
   const [activeTab, setActiveTab] = useState<'kanban' | 'table' | 'dashboard'>('kanban');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
@@ -34,11 +36,61 @@ export default function App() {
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Parse salesperson route from URL (e.g. /v/thomas or /v/seller-thomas or /vendedor/thomas)
+  const parseCurrentRoute = useCallback((allSellers: Salesperson[]) => {
+    if (typeof window === 'undefined') return;
+    const pathname = window.location.pathname;
+    const match = pathname.match(/^\/(?:v|vendedor|seller)\/([^/]+)/i);
+
+    if (match && match[1]) {
+      const identifier = match[1];
+      setRouteSalespersonSlug(identifier);
+      const matchedSeller = matchSalespersonFromRoute(identifier, allSellers);
+      if (matchedSeller) {
+        setSelectedSalespersonId(matchedSeller.id);
+      }
+    } else {
+      setRouteSalespersonSlug(null);
+    }
+  }, []);
+
   useEffect(() => {
-    fetchLeads();
     fetchTags();
     fetchSalespeople();
   }, []);
+
+  // Listen to popstate (browser back/forward button)
+  useEffect(() => {
+    const handlePopState = () => {
+      parseCurrentRoute(salespeople);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [salespeople, parseCurrentRoute]);
+
+  // Navigate to salesperson route
+  const handleNavigateToSalesperson = (sellerIdOrAll: string) => {
+    if (sellerIdOrAll === 'ALL') {
+      setSelectedSalespersonId('ALL');
+      setRouteSalespersonSlug(null);
+      if (window.location.pathname !== '/') {
+        window.history.pushState({}, '', '/');
+      }
+    } else {
+      const seller = salespeople.find((s) => s.id === sellerIdOrAll);
+      if (seller) {
+        setSelectedSalespersonId(seller.id);
+        const slug = getSalespersonSlug(seller);
+        setRouteSalespersonSlug(slug);
+        const newPath = `/v/${slug}`;
+        if (window.location.pathname !== newPath) {
+          window.history.pushState({}, '', newPath);
+        }
+      } else {
+        setSelectedSalespersonId(sellerIdOrAll);
+      }
+    }
+  };
 
   const fetchSalespeople = async () => {
     try {
@@ -48,6 +100,7 @@ export default function App() {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           setSalespeople(data);
+          parseCurrentRoute(data);
         }
       }
     } catch (err) {
@@ -55,9 +108,15 @@ export default function App() {
     }
   };
 
+  // Re-fetch leads when selected salesperson changes or on initial load
+  useEffect(() => {
+    fetchLeads();
+  }, [selectedSalespersonId]);
+
   const fetchLeads = async () => {
     setLoadingLeads(true);
     try {
+      // If a specific salesperson route is active, we can fetch their isolated leads or full list
       const res = await fetch('/api/leads');
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
@@ -230,54 +289,71 @@ export default function App() {
         onSeedSamples={handleSeedSamples}
         totalLeads={leads.length}
         salespeopleCount={salespeople.length}
+        activeSalesperson={activeSalesperson}
+        onClearSalespersonFilter={() => handleNavigateToSalesperson('ALL')}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden">
-        {/* Top Navbar Header with Salesperson Selector */}
+        {/* Top Navbar Header with Salesperson Selector & Dedicated Instance indicator */}
         <header className="bg-white border-b border-neutral-200 px-3 md:px-6 py-2 md:py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0 shadow-2xs z-10">
           <div className="min-w-0 flex items-center gap-3">
             <div>
-              <h2 className="text-xs md:text-sm font-bold text-neutral-900 tracking-tight truncate">
-                {activeTab === 'kanban'
-                  ? 'Pipeline Kanban de Vendas'
-                  : activeTab === 'table'
-                  ? 'Lista Completa de Leads'
-                  : 'Dashboard Analítico de Vendas'}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs md:text-sm font-bold text-neutral-900 tracking-tight truncate">
+                  {activeTab === 'kanban'
+                    ? 'Pipeline Kanban de Vendas'
+                    : activeTab === 'table'
+                    ? 'Lista Completa de Leads'
+                    : 'Dashboard Analítico de Vendas'}
+                </h2>
+                {activeSalesperson && (
+                  <span
+                    className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border shadow-2xs"
+                    style={{
+                      backgroundColor: activeSalesperson.bgColor || '#e0f2fe',
+                      color: activeSalesperson.color || '#0284c7',
+                      borderColor: `${activeSalesperson.color || '#0284c7'}40`
+                    }}
+                  >
+                    <UserCheck className="w-3 h-3" />
+                    <span>Instância: {activeSalesperson.name}</span>
+                  </span>
+                )}
+              </div>
               <p className="text-[10px] md:text-[11px] text-neutral-500 truncate">
                 {displayedLeads.length} de {leads.length} lead(s)
-                {selectedSalespersonId !== 'ALL' && activeSalesperson && ` • Carteira: ${activeSalesperson.name}`}
+                {selectedSalespersonId !== 'ALL' && activeSalesperson && ` • Carteira Isolada`}
                 {selectedTagFilters.length > 0 && ` • (${selectedTagFilters.length} tag(s))`}
               </p>
             </div>
           </div>
 
-          {/* Salesperson Quick Tabs / Selector */}
+          {/* Salesperson Quick Tabs / Selector & Routing Switcher */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <div className="flex items-center bg-neutral-100/90 p-1 rounded-xl border border-neutral-200 shadow-2xs">
               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider px-2 hidden sm:inline-block">
-                Vendedor:
+                Rota:
               </span>
 
               {/* All Sellers Button */}
               <button
-                onClick={() => setSelectedSalespersonId('ALL')}
+                onClick={() => handleNavigateToSalesperson('ALL')}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                   selectedSalespersonId === 'ALL'
                     ? 'bg-white text-neutral-900 shadow-2xs font-bold'
                     : 'text-neutral-600 hover:text-neutral-900'
                 }`}
-                title="Visualizar leads de todos os vendedores"
+                title="Visualizar visão geral de todos os vendedores"
               >
                 <Users className="w-3.5 h-3.5" />
-                <span>Todos</span>
+                <span>Geral</span>
                 <span className="text-[10px] font-mono bg-neutral-200 text-neutral-700 px-1.5 py-0.2 rounded-full font-bold">
                   {leads.length}
                 </span>
               </button>
 
-              {/* Individual Salesperson Pills */}
+              {/* Individual Salesperson Pills with Dedicated Route Swapping */}
               {salespeople.map((seller) => {
                 const sellerLeadCount = leads.filter(l => (l.salespersonId || 'seller-thomas') === seller.id).length;
                 const isSelected = selectedSalespersonId === seller.id;
@@ -285,12 +361,13 @@ export default function App() {
                 return (
                   <button
                     key={seller.id}
-                    onClick={() => setSelectedSalespersonId(seller.id)}
+                    onClick={() => handleNavigateToSalesperson(seller.id)}
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                       isSelected
                         ? 'bg-white text-blue-700 shadow-2xs ring-1 ring-neutral-200 font-bold'
                         : 'text-neutral-600 hover:text-neutral-900'
                     }`}
+                    title={`Abrir rota exclusiva /v/${getSalespersonSlug(seller)}`}
                   >
                     <span 
                       className="w-2.5 h-2.5 rounded-full shrink-0" 
@@ -335,11 +412,12 @@ export default function App() {
           </div>
         </header>
 
-        {/* Barra de Métricas & Filtros de Vendas (oculta no Dashboard para evitar duplicidade) */}
+        {/* Barra de Métricas & Filtros de Vendas (Métricas 100% isoladas para o vendedor selecionado) */}
         {activeTab !== 'dashboard' && (
           <MetricsBar
             leads={displayedLeads}
             tags={tags}
+            selectedSalespersonId={selectedSalespersonId}
             selectedTagFilters={selectedTagFilters}
             onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
             onShowToast={showToast}
@@ -375,8 +453,10 @@ export default function App() {
           ) : (
             <AnalyticsDashboard
               leads={displayedLeads}
+              allLeads={leads}
               tags={tags}
               salespeople={salespeople}
+              selectedSalespersonId={selectedSalespersonId}
               onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
               onShowToast={showToast}
             />
@@ -408,6 +488,7 @@ export default function App() {
         onRefreshSalespeople={fetchSalespeople}
         onRefreshLeads={fetchLeads}
         onShowToast={showToast}
+        onSelectSalespersonRoute={(seller) => handleNavigateToSalesperson(seller.id)}
       />
 
       <WhatsAppSettingsModal

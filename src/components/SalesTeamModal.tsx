@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { Salesperson, Lead, CustomTag } from '../types';
 import { 
   X, UserPlus, Users, Share2, Shield, Trash2, Edit3, Check, 
-  Sparkles, AlertCircle, ArrowRight, UserCheck, CheckCircle2, Percent, Hash
+  Sparkles, AlertCircle, ArrowRight, UserCheck, CheckCircle2, Percent, Hash,
+  Link, ExternalLink, MessageCircle, Copy
 } from 'lucide-react';
+import { getSalespersonAppUrl, getSalespersonSlug } from '../lib/salesperson';
+import { getWhatsAppUrl } from '../lib/phone';
 
 interface SalesTeamModalProps {
   isOpen: boolean;
@@ -13,6 +16,7 @@ interface SalesTeamModalProps {
   onRefreshSalespeople: () => Promise<void>;
   onRefreshLeads: () => Promise<void>;
   onShowToast: (msg: string) => void;
+  onSelectSalespersonRoute?: (seller: Salesperson) => void;
 }
 
 const COLOR_PALETTES = [
@@ -33,7 +37,8 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
   leads,
   onRefreshSalespeople,
   onRefreshLeads,
-  onShowToast
+  onShowToast,
+  onSelectSalespersonRoute
 }) => {
   const [activeTab, setActiveTab] = useState<'team' | 'distribute'>('team');
 
@@ -323,6 +328,65 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                           <div className="p-1 rounded bg-emerald-50/50">
                             <span className="block text-[10px] text-emerald-600 font-medium">Vendas</span>
                             <span className="text-xs font-bold text-emerald-900">{closed}</span>
+                          </div>
+                        </div>
+
+                        {/* Dedicated Salesperson Route URL & Actions */}
+                        <div className="mt-2.5 pt-2 border-t border-neutral-100/80 flex flex-wrap items-center justify-between gap-1.5 bg-neutral-50/80 -mx-3.5 -mb-3.5 p-2.5 rounded-b-xl">
+                          <div className="flex items-center gap-1 min-w-0 text-[11px] font-mono text-neutral-500 truncate">
+                            <Link className="w-3 h-3 text-blue-600 shrink-0" />
+                            <span className="truncate">/v/{getSalespersonSlug(seller)}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const url = getSalespersonAppUrl(seller);
+                                navigator.clipboard.writeText(url);
+                                onShowToast(`Link da rota de ${seller.name} copiado!`);
+                              }}
+                              className="px-2 py-1 rounded bg-white hover:bg-neutral-100 text-neutral-700 text-[10px] font-semibold border border-neutral-200 shadow-2xs flex items-center gap-1 transition-colors"
+                              title="Copiar link exclusivo do vendedor"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>Copiar Link</span>
+                            </button>
+
+                            {seller.phone && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const url = getSalespersonAppUrl(seller);
+                                  const msg = `Olá ${seller.name}, aqui está o seu link exclusivo do CRM: ${url}`;
+                                  const waUrl = getWhatsAppUrl(seller.phone!, msg);
+                                  window.open(waUrl, '_blank');
+                                }}
+                                className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-semibold border border-emerald-200 flex items-center gap-1 transition-colors"
+                                title="Enviar link do CRM via WhatsApp"
+                              >
+                                <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                <span>WhatsApp</span>
+                              </button>
+                            )}
+
+                            {onSelectSalespersonRoute && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectSalespersonRoute(seller);
+                                  onClose();
+                                }}
+                                className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold flex items-center gap-1 transition-colors"
+                                title="Abrir painel deste vendedor"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>Acessar</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>

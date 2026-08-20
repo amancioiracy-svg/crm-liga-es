@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare } from 'lucide-react';
+import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight } from 'lucide-react';
+import { Salesperson } from '../types';
+import { getSalespersonSlug } from '../lib/salesperson';
 
 interface SidebarProps {
   activeTab: 'kanban' | 'table' | 'dashboard';
@@ -11,6 +13,8 @@ interface SidebarProps {
   onSeedSamples: () => void;
   totalLeads: number;
   salespeopleCount?: number;
+  activeSalesperson?: Salesperson;
+  onClearSalespersonFilter?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -22,7 +26,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenWhatsAppSettings,
   onSeedSamples,
   totalLeads,
-  salespeopleCount = 1
+  salespeopleCount = 1,
+  activeSalesperson,
+  onClearSalespersonFilter
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -32,19 +38,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <aside className="hidden xl:flex w-52 bg-white border-r border-neutral-200 flex-col justify-between h-screen shrink-0 sticky top-0 select-none">
         {/* Top Header */}
         <div>
-          <div className="p-3 border-b border-neutral-100 flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-              CRM
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-xs font-bold text-neutral-900 leading-tight truncate">
-                CRM de Leads
-              </h1>
-              <p className="text-[10px] text-neutral-400 truncate">
-                Acompanhamento & Ligações
-              </p>
+          <div className="p-3 border-b border-neutral-100 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+                CRM
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-xs font-bold text-neutral-900 leading-tight truncate">
+                  {activeSalesperson ? `CRM • ${activeSalesperson.name}` : 'CRM de Leads'}
+                </h1>
+                <p className="text-[10px] text-neutral-400 truncate">
+                  {activeSalesperson ? `/v/${getSalespersonSlug(activeSalesperson)}` : 'Acompanhamento & Ligações'}
+                </p>
+              </div>
             </div>
           </div>
+
+          {activeSalesperson && (
+            <div className="mx-2.5 mt-2.5 p-2 rounded-xl border border-blue-200 bg-blue-50/80">
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
+                  Instância do Vendedor
+                </span>
+                <span 
+                  className="w-2.5 h-2.5 rounded-full" 
+                  style={{ backgroundColor: activeSalesperson.color || '#0284c7' }} 
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-neutral-900 truncate">
+                  {activeSalesperson.name}
+                </span>
+                {onClearSalespersonFilter && (
+                  <button
+                    onClick={onClearSalespersonFilter}
+                    className="text-[10px] text-blue-700 hover:text-blue-900 underline font-semibold"
+                  >
+                    Ver Todos
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Navigation Menu */}
           <div className="p-2.5 space-y-1">
@@ -169,13 +204,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* MOBILE TOP BAR (Only visible on screens < xl) */}
       <div className="xl:hidden bg-white border-b border-neutral-200 px-3 py-2 flex items-center justify-between sticky top-0 z-30 shadow-2xs shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs shrink-0">
             CRM
           </div>
-          <div>
-            <h1 className="text-xs font-bold text-neutral-900 leading-tight">CRM Leads</h1>
-            <p className="text-[10px] text-neutral-500 font-mono">{totalLeads} lead(s)</p>
+          <div className="min-w-0">
+            <h1 className="text-xs font-bold text-neutral-900 leading-tight truncate">
+              {activeSalesperson ? activeSalesperson.name : 'CRM Leads'}
+            </h1>
+            <p className="text-[10px] text-neutral-500 font-mono truncate">
+              {totalLeads} lead(s) {activeSalesperson && `• /v/${getSalespersonSlug(activeSalesperson)}`}
+            </p>
           </div>
         </div>
 

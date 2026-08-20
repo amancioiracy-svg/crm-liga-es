@@ -206,11 +206,13 @@ app.get(['/health', '/api/health', '/healthz', '/ping'], (req, res) => {
 
 // API ROUTES
 
-// 1. Get all leads with call stats & salesperson info
+// 1. Get all leads with call stats & salesperson info (optionally filtered by salesperson)
 app.get('/api/leads', async (req, res) => {
+  const { salespersonId } = req.query;
+
   try {
     if (usePostgres && pgPool) {
-      const result = await pgPool.query(`
+      let query = `
         SELECT 
           l.id,
           l.name,
@@ -231,12 +233,26 @@ app.get('/api/leads', async (req, res) => {
           ) AS "lastCallTag"
         FROM leads l
         LEFT JOIN calls c ON l.id = c.lead_id
+      `;
+      const params: any[] = [];
+      if (salespersonId && salespersonId !== 'ALL') {
+        params.push(salespersonId);
+        query += ` WHERE l.salesperson_id = $1`;
+      }
+      query += `
         GROUP BY l.id, l.name, l.phone_number, l.public_url, l.column_status, l.salesperson_id, l.salesperson_name, l.next_follow_up_at, l.created_at, l.updated_at
         ORDER BY l.created_at DESC
-      `);
+      `;
+
+      const result = await pgPool.query(query, params);
       return res.json(result.rows);
     } else {
-      const leadsList = Array.from(memoryLeadsMap.values()).map(lead => {
+      let allLeads = Array.from(memoryLeadsMap.values());
+      if (salespersonId && salespersonId !== 'ALL') {
+        allLeads = allLeads.filter(l => (l.salespersonId || 'seller-thomas') === salespersonId);
+      }
+
+      const leadsList = allLeads.map(lead => {
         const calls = memoryCallLogsMap.get(lead.id) || [];
         const sortedCalls = [...calls].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         const lastCall = sortedCalls.length > 0 ? sortedCalls[0] : undefined;
@@ -1361,31 +1377,49 @@ app.delete('/api/leads/:id', async (req, res) => {
   }
 });
 
-// Endpoint to fetch ALL call logs across all leads (for Metrics & Reports)
+// Endpoint to fetch call logs (for Metrics & Reports, optionally filtered by salesperson)
 app.get('/api/calls', async (req, res) => {
+  const { salespersonId } = req.query;
+
   try {
     if (usePostgres && pgPool) {
-      const result = await pgPool.query(
-        `SELECT c.id, c.lead_id AS "leadId", l.name AS "leadName", l.phone_number AS "phoneNumber",
-                l.column_status AS "columnStatus", c.tag, c.comment, c.duration_seconds AS "durationSeconds",
-                c.follow_up_at AS "followUpAt", c.created_at AS "createdAt"
-         FROM calls c
-         JOIN leads l ON c.lead_id = l.id
-         ORDER BY c.created_at DESC`
-      );
+      let query = `
+        SELECT c.id, c.lead_id AS "leadId", l.name AS "leadName", l.phone_number AS "phoneNumber",
+               l.column_status AS "columnStatus", COALESCE(l.salesperson_id, 'seller-thomas') AS "salespersonId",
+               COALESCE(l.salesperson_name, 'Thomas') AS "salespersonName",
+               c.tag, c.comment, c.duration_seconds AS "durationSeconds",
+               c.follow_up_at AS "followUpAt", c.created_at AS "createdAt"
+        FROM calls c
+        JOIN leads l ON c.lead_id = l.id
+      `;
+      const params: any[] = [];
+      if (salespersonId && salespersonId !== 'ALL') {
+        params.push(salespersonId);
+        query += ` WHERE l.salesperson_id = $1`;
+      }
+      query += ` ORDER BY c.created_at DESC`;
+
+      const result = await pgPool.query(query, params);
       return res.json(result.rows);
     } else {
       const allCalls: any[] = [];
       memoryCallLogsMap.forEach((calls, leadId) => {
         const lead = memoryLeadsMap.get(leadId);
-        calls.forEach((c) => {
-          allCalls.push({
-            ...c,
-            leadName: lead?.name || 'Lead Excluído',
-            phoneNumber: lead?.phoneNumber || '',
-            columnStatus: lead?.columnStatus || 'Leads'
+        const sellerId = lead?.salespersonId || 'seller-thomas';
+        const sellerName = lead?.salespersonName || 'Thomas';
+
+        if (!salespersonId || salespersonId === 'ALL' || sellerId === salespersonId) {
+          calls.forEach((c) => {
+            allCalls.push({
+              ...c,
+              leadName: lead?.name || 'Lead Excluído',
+              phoneNumber: lead?.phoneNumber || '',
+              columnStatus: lead?.columnStatus || 'Leads',
+              salespersonId: sellerId,
+              salespersonName: sellerName
+            });
           });
-        });
+        }
       });
       allCalls.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       return res.json(allCalls);
