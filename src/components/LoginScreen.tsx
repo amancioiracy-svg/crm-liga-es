@@ -240,7 +240,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <form onSubmit={handleAdminLogin} className="space-y-5">
                 <div>
                   <label className="block text-xs font-semibold text-neutral-300 mb-2 uppercase tracking-wider">
-                    Senha do Gestor (Opcional no modo padrão)
+                    Senha Master do Gestor *
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-500">
@@ -251,12 +251,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                       type="password"
                       value={adminPass}
                       onChange={(e) => setAdminPass(e.target.value)}
-                      placeholder="Padrão: Acesso Direto Master"
+                      placeholder="Digite a senha master"
+                      required
+                      autoFocus
                       className="w-full pl-10 pr-4 py-3.5 bg-neutral-950 border border-neutral-700/80 rounded-xl text-white placeholder-neutral-500 text-base font-mono focus:outline-hidden focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
                     />
                   </div>
                   <p className="text-[11px] text-neutral-400 mt-2">
-                    🛡️ Permite cadastrar vendedores, configurar porcentagem (%) de distribuição de leads, subir planilhas e visualizar o ranking completo da equipe.
+                    🛡️ Acesso total: cadastrar vendedoras, definir % de divisão de leads, subir arquivos e gerenciar todo o pipeline.
                   </p>
                 </div>
 

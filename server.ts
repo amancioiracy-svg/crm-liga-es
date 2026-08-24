@@ -581,12 +581,14 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     // 1. Admin Master login
     if (role === 'admin') {
-      // Default password or custom admin pass
+      if (password !== 'thomas3249') {
+        return res.status(401).json({ error: 'Senha incorreta para o Acesso Gestor Master.' });
+      }
       return res.json({
         success: true,
         user: {
           role: 'admin',
-          salespersonName: 'Gestor / Administrador'
+          salespersonName: 'Thomas (Gestor Master)'
         }
       });
     }
