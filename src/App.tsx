@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lead, ColumnStatus, CustomTag, Salesperson } from './types';
-import { Sidebar, AuthUser } from './components/Sidebar';
+import { Sidebar, AuthUser, MainAppTab } from './components/Sidebar';
 import { KanbanBoard } from './components/KanbanBoard';
 import { AllLeadsTable } from './components/AllLeadsTable';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { SalesTeamManagementView } from './components/SalesTeamManagementView';
 import { LeadDetailModal } from './components/LeadDetailModal';
 import { TagManagerModal } from './components/TagManagerModal';
 import { ZipUploadModal } from './components/ZipUploadModal';
@@ -37,7 +38,7 @@ export default function App() {
   const [selectedSalespersonId, setSelectedSalespersonId] = useState<string>('ALL');
   const [routeSalespersonSlug, setRouteSalespersonSlug] = useState<string | null>(null);
   const [loadingLeads, setLoadingLeads] = useState(true);
-  const [activeTab, setActiveTab] = useState<'kanban' | 'table' | 'dashboard'>('kanban');
+  const [activeTab, setActiveTab] = useState<MainAppTab>('kanban');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
   
   // Modals & Toasts
@@ -501,7 +502,7 @@ export default function App() {
         </header>
 
         {/* Barra de Métricas & Filtros de Vendas */}
-        {activeTab !== 'dashboard' && (
+        {activeTab !== 'dashboard' && activeTab !== 'team' && (
           <MetricsBar
             leads={displayedLeads}
             tags={tags}
@@ -538,7 +539,7 @@ export default function App() {
               onShowToast={showToast}
               onOpenJsonBatchModal={() => setIsJsonModalOpen(true)}
             />
-          ) : (
+          ) : activeTab === 'dashboard' ? (
             <AnalyticsDashboard
               leads={displayedLeads}
               allLeads={leads}
@@ -546,6 +547,14 @@ export default function App() {
               salespeople={salespeople}
               selectedSalespersonId={isAdmin ? selectedSalespersonId : (currentUser.salespersonId || 'seller-thomas')}
               onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
+              onShowToast={showToast}
+            />
+          ) : (
+            <SalesTeamManagementView
+              salespeople={salespeople}
+              leads={leads}
+              onRefreshSalespeople={fetchSalespeople}
+              onRefreshLeads={fetchLeads}
               onShowToast={showToast}
             />
           )}

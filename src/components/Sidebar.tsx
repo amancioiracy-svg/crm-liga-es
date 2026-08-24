@@ -10,9 +10,11 @@ export interface AuthUser {
   phone?: string;
 }
 
+export type MainAppTab = 'kanban' | 'table' | 'dashboard' | 'team';
+
 interface SidebarProps {
-  activeTab: 'kanban' | 'table' | 'dashboard';
-  setActiveTab: (tab: 'kanban' | 'table' | 'dashboard') => void;
+  activeTab: MainAppTab;
+  setActiveTab: (tab: MainAppTab) => void;
   onOpenZipModal: () => void;
   onOpenTagsModal: () => void;
   onOpenSalesTeamModal: () => void;
@@ -155,6 +157,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="truncate">Dashboard Analítico</span>
               </div>
             </button>
+
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab('team')}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  activeTab === 'team'
+                    ? 'bg-blue-50 text-blue-900 font-bold border border-blue-200'
+                    : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="truncate">Equipe & Vendedoras</span>
+                </div>
+                <span className="text-[10px] font-mono bg-blue-100 text-blue-800 font-bold px-1.5 py-0.5 rounded-full shrink-0 ml-1">
+                  {salespeopleCount}
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Tags & Actions Section */}
@@ -371,6 +392,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span>Dashboard Analítico</span>
                   </div>
                 </button>
+
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setActiveTab('team');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-medium ${
+                      activeTab === 'team' ? 'bg-blue-50 text-blue-900 font-bold border border-blue-200' : 'text-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-blue-600" />
+                      <span>Equipe & Vendedoras</span>
+                    </div>
+                    <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full font-bold">
+                      {salespeopleCount}
+                    </span>
+                  </button>
+                )}
               </div>
 
               <div className="border-t border-neutral-100 my-4 pt-3 space-y-2">
