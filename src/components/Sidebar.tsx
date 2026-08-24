@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight, LogOut, Shield } from 'lucide-react';
+import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight, LogOut, Shield, Download, FileJson } from 'lucide-react';
 import { Salesperson } from '../types';
 import { getSalespersonSlug } from '../lib/salesperson';
 
@@ -44,7 +44,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [downloadingJson, setDownloadingJson] = useState(false);
   const isAdmin = currentUser?.role === 'admin';
+
+  const handleDownloadUncontactedNamesJson = async () => {
+    try {
+      setDownloadingJson(true);
+      const res = await fetch('/api/export/uncontacted-names?download=true');
+      if (!res.ok) throw new Error('Falha ao exportar JSON');
+      const data = await res.json();
+      
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `leads_nao_abordados_nomes_${new Date().toISOString().slice(0, 10)}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error(e);
+      alert('Erro ao baixar o arquivo JSON de nomes: ' + e.message);
+    } finally {
+      setDownloadingJson(false);
+    }
+  };
 
   return (
     <>
@@ -226,6 +252,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <FileArchive className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
                   <span className="truncate">Upload ZIP</span>
+                </button>
+
+                <button
+                  onClick={handleDownloadUncontactedNamesJson}
+                  disabled={downloadingJson}
+                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-300 shadow-2xs"
+                  title="Baixa um arquivo JSON contendo apenas o nome de todos os leads que ainda não foram ligados no sistema todo"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <span className="truncate">{downloadingJson ? 'Baixando JSON...' : 'Baixar JSON (Não Ligados)'}</span>
                 </button>
 
                 <button
@@ -468,6 +504,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     >
                       <FileArchive className="w-4 h-4 text-neutral-300" />
                       <span>Upload de Arquivos ZIP</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleDownloadUncontactedNamesJson();
+                        setMobileMenuOpen(false);
+                      }}
+                      disabled={downloadingJson}
+                      className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-amber-900 bg-amber-50 border border-amber-300 shadow-2xs"
+                    >
+                      <Download className="w-4 h-4 text-amber-700" />
+                      <span>{downloadingJson ? 'Baixando JSON...' : 'Baixar JSON (Nomes Não Ligados)'}</span>
                     </button>
 
                     <button

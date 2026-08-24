@@ -844,8 +844,9 @@ app.post('/api/leads/distribute', async (req, res) => {
 });
 
 // 6.1 AUTOMATIC QUOTA-BASED LEAD DISTRIBUTION
-// Distributes all eligible uncontacted leads across salespeople according to their configured % quotas
+// Distributes selected scope of leads across salespeople according to their configured % quotas
 app.post('/api/leads/distribute-by-quotas', async (req, res) => {
+  const { targetScope = 'new_only', sourceSalespersonId } = req.body || {};
   try {
     let allSellers: Salesperson[] = [];
     if (usePostgres && pgPool) {
@@ -859,32 +860,98 @@ app.post('/api/leads/distribute-by-quotas', async (req, res) => {
       return res.status(400).json({ error: 'Nenhum vendedor cadastrado na equipe.' });
     }
 
-    // Get all eligible uncontacted leads (column 'Leads' with 0 calls)
+    // Get eligible leads based on targetScope
+    // 'new_only': Column 'Leads' and 0 calls
+    // 'all_unattempted': Any column with 0 calls
+    // 'all': Entire base of leads (re-split existing and new)
+    // 'unconverted': Leads that are NOT in 'fechamento' (e.g. tentativa 1, 2, 3, sem_interesse, etc.)
     let eligibleLeads: { id: string }[] = [];
+    
     if (usePostgres && pgPool) {
-      const elRes = await pgPool.query(`
-        SELECT l.id
-        FROM leads l
-        LEFT JOIN calls c ON l.id = c.lead_id
-        WHERE l.column_status = 'Leads'
-        GROUP BY l.id, l.created_at
-        HAVING COUNT(c.id) = 0
-        ORDER BY l.created_at DESC
-      `);
+      let query = '';
+      const params: any[] = [];
+
+      if (targetScope === 'new_only') {
+        query = `
+          SELECT l.id
+          FROM leads l
+          LEFT JOIN calls c ON l.id = c.lead_id
+          WHERE l.column_status = 'Leads'
+        `;
+        if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
+          params.push(sourceSalespersonId);
+          query += ` AND l.salesperson_id = $${params.length}`;
+        }
+        query += `
+          GROUP BY l.id, l.created_at
+          HAVING COUNT(c.id) = 0
+          ORDER BY l.created_at DESC
+        `;
+      } else if (targetScope === 'all_unattempted') {
+        query = `
+          SELECT l.id
+          FROM leads l
+          LEFT JOIN calls c ON l.id = c.lead_id
+        `;
+        if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
+          params.push(sourceSalespersonId);
+          query += ` WHERE l.salesperson_id = $${params.length}`;
+        }
+        query += `
+          GROUP BY l.id, l.created_at
+          HAVING COUNT(c.id) = 0
+          ORDER BY l.created_at DESC
+        `;
+      } else if (targetScope === 'unconverted') {
+        query = `
+          SELECT l.id
+          FROM leads l
+          WHERE l.column_status != 'fechamento'
+        `;
+        if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
+          params.push(sourceSalespersonId);
+          query += ` AND l.salesperson_id = $${params.length}`;
+        }
+        query += ` ORDER BY l.created_at DESC`;
+      } else {
+        // 'all' - Entire base
+        query = `SELECT l.id FROM leads l`;
+        if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
+          params.push(sourceSalespersonId);
+          query += ` WHERE l.salesperson_id = $${params.length}`;
+        }
+        query += ` ORDER BY l.created_at DESC`;
+      }
+
+      const elRes = await pgPool.query(query, params);
       eligibleLeads = elRes.rows;
     } else {
       const allLeads = Array.from(memoryLeadsMap.values());
       eligibleLeads = allLeads
         .filter(l => {
-          if (l.columnStatus !== 'Leads') return false;
+          if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
+            if ((l.salespersonId || 'seller-thomas') !== sourceSalespersonId) return false;
+          }
           const calls = memoryCallLogsMap.get(l.id) || [];
-          return calls.length === 0;
+          if (targetScope === 'new_only') {
+            return l.columnStatus === 'Leads' && calls.length === 0;
+          } else if (targetScope === 'all_unattempted') {
+            return calls.length === 0;
+          } else if (targetScope === 'unconverted') {
+            return l.columnStatus !== 'fechamento';
+          }
+          return true; // 'all'
         })
         .map(l => ({ id: l.id }));
     }
 
     if (eligibleLeads.length === 0) {
-      return res.status(400).json({ error: 'Não há leads novos não abordados (coluna "Leads" com 0 ligações) para distribuir.' });
+      const scopeLabel = targetScope === 'new_only' 
+        ? 'leads novos não abordados (coluna "Leads" com 0 ligações)'
+        : targetScope === 'all_unattempted'
+          ? 'leads sem ligação registrada'
+          : 'leads no filtro selecionado';
+      return res.status(400).json({ error: `Não há ${scopeLabel} para distribuir.` });
     }
 
     // Calculate distribution quota proportions
@@ -965,11 +1032,49 @@ app.post('/api/leads/distribute-by-quotas', async (req, res) => {
       success: true,
       totalDistributed: totalLeadsCount,
       summary,
-      message: `${totalLeadsCount} leads foram distribuídos conforme as porcentagens configuradas da equipe!`
+      message: `${totalLeadsCount} leads foram redistribuídos conforme as porcentagens configuradas da equipe!`
     });
   } catch (error: any) {
     console.error('Error distributing leads by quotas:', error);
     res.status(500).json({ error: `Erro ao distribuir leads por porcentagem: ${error.message}` });
+  }
+});
+
+// 6.2 EXPORT UNCONTACTED LEADS NAMES ONLY AS JSON
+app.get('/api/export/uncontacted-names', async (req, res) => {
+  try {
+    let uncontactedNames: { nome: string }[] = [];
+
+    if (usePostgres && pgPool) {
+      const qRes = await pgPool.query(`
+        SELECT l.name as nome
+        FROM leads l
+        LEFT JOIN calls c ON l.id = c.lead_id
+        GROUP BY l.id, l.name, l.created_at
+        HAVING COUNT(c.id) = 0
+        ORDER BY l.created_at DESC
+      `);
+      uncontactedNames = qRes.rows.map(r => ({ nome: r.nome || 'Sem Nome' }));
+    } else {
+      const allLeads = Array.from(memoryLeadsMap.values());
+      uncontactedNames = allLeads
+        .filter(l => {
+          const calls = memoryCallLogsMap.get(l.id) || [];
+          return calls.length === 0;
+        })
+        .map(l => ({ nome: l.name || 'Sem Nome' }));
+    }
+
+    const download = req.query.download === 'true';
+    if (download) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="leads_nao_abordados_nomes.json"');
+    }
+
+    return res.json(uncontactedNames);
+  } catch (error: any) {
+    console.error('Error exporting uncontacted names:', error);
+    res.status(500).json({ error: `Erro ao exportar nomes dos leads não abordados: ${error.message}` });
   }
 });
 

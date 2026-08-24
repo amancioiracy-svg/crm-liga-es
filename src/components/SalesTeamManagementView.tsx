@@ -3,7 +3,7 @@ import { Salesperson, Lead } from '../types';
 import { 
   Users, UserPlus, Sparkles, Percent, Phone, Mail, Trash2, 
   Check, ArrowRight, Shield, RefreshCw, Send, CheckCircle2,
-  TrendingUp, BarChart2, Award, Clock, PhoneCall, Copy
+  TrendingUp, BarChart2, Award, Clock, PhoneCall, Copy, Download, FileJson
 } from 'lucide-react';
 import { getSalespersonAppUrl, getSalespersonSlug } from '../lib/salesperson';
 
@@ -56,6 +56,36 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
   const [autoDistributing, setAutoDistributing] = useState(false);
 
   // Sync quotas state
+  // Auto distribution scope
+  const [autoDistributeScope, setAutoDistributeScope] = useState<'new_only' | 'all' | 'all_unattempted' | 'unconverted'>('new_only');
+  const [showAutoDistributeConfirmModal, setShowAutoDistributeConfirmModal] = useState(false);
+  const [downloadingNamesJson, setDownloadingNamesJson] = useState(false);
+
+  const handleDownloadUncontactedNames = async () => {
+    try {
+      setDownloadingNamesJson(true);
+      const res = await fetch('/api/export/uncontacted-names?download=true');
+      if (!res.ok) throw new Error('Falha ao exportar JSON');
+      const data = await res.json();
+      
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `leads_nao_abordados_nomes_${new Date().toISOString().slice(0, 10)}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      onShowToast(`📥 Arquivo baixado com sucesso (${data.length} nomes de leads)!`);
+    } catch (e: any) {
+      onShowToast(`Erro ao baixar JSON: ${e.message}`);
+    } finally {
+      setDownloadingNamesJson(false);
+    }
+  };
+
   useEffect(() => {
     const q: Record<string, number> = {};
     salespeople.forEach((s) => {
@@ -68,9 +98,19 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
   }, [salespeople]);
 
   // Lead pools calculation
-  const newLeads = leads.filter((l) => l.columnStatus === 'leads' && (l.callHistory?.length || 0) === 0);
+  const newLeads = leads.filter((l) => (l.columnStatus === 'leads' || l.columnStatus === 'Leads') && (l.callHistory?.length || 0) === 0);
   const unattemptedLeads = leads.filter((l) => (l.callHistory?.length || 0) === 0);
+  const unconvertedLeads = leads.filter((l) => l.columnStatus !== 'fechamento');
   
+  // Selected pool count for auto distribution
+  const autoScopeCount = autoDistributeScope === 'new_only'
+    ? newLeads.length
+    : autoDistributeScope === 'all_unattempted'
+      ? unattemptedLeads.length
+      : autoDistributeScope === 'unconverted'
+        ? unconvertedLeads.length
+        : leads.length;
+
   const eligibleLeads = distSourceFilter === 'new_only' 
     ? newLeads 
     : distSourceFilter === 'all_unattempted' 
@@ -155,8 +195,8 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
   };
 
   const handleAutoDistributeByQuotas = async () => {
-    if (totalEligibleCount === 0) {
-      onShowToast('Não há novos leads disponíveis para distribuição no momento.');
+    if (autoScopeCount === 0) {
+      onShowToast('Não há leads disponíveis no grupo selecionado para distribuição.');
       return;
     }
 
@@ -164,7 +204,10 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
     try {
       const res = await fetch('/api/leads/distribute-by-quotas', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetScope: autoDistributeScope
+        })
       });
       const data = await res.json();
       if (!res.ok) {
@@ -172,6 +215,7 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
       }
 
       onShowToast(`⚡ ${data.message || 'Leads distribuídos com sucesso!'}`);
+      setShowAutoDistributeConfirmModal(false);
       await onRefreshLeads();
       await onRefreshSalespeople();
     } catch (err: any) {
@@ -549,31 +593,192 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
       {/* SUB-TAB 2: DISTRIBUTION & QUOTAS */}
       {activeSubTab === 'distribution' && (
         <div className="space-y-6">
-          {/* Quick 1-Click Auto Distribution Card */}
-          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/60 rounded-2xl p-6 border border-emerald-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="space-y-1 max-w-xl">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-2xs">
-                  <Sparkles className="w-4 h-4" />
+          {/* Quick 1-Click Auto Distribution Card with Group Selector */}
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/60 rounded-2xl p-6 border border-emerald-200 shadow-xs space-y-5">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+              <div className="space-y-1 max-w-xl">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-2xs">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-black text-emerald-950 uppercase tracking-wider">
+                    Redistribuição Automática por Porcentagem (%) da Equipe
+                  </h3>
                 </div>
-                <h3 className="text-sm font-black text-emerald-950 uppercase tracking-wider">
-                  Divisão Automática por Porcentagem (%) da Equipe
-                </h3>
+                <p className="text-xs text-emerald-800 leading-relaxed">
+                  Escolha qual <strong>grupo de leads</strong> você deseja fatiar e redistribuir entre as vendedoras conforme as cotas (%) configuradas.
+                </p>
               </div>
-              <p className="text-xs text-emerald-800 leading-relaxed">
-                Distribui instantaneamente todos os <strong>{totalEligibleCount} novos leads</strong> não abordados entre as vendedoras com base nas quotas (%) configuradas abaixo.
-              </p>
+
+              <button
+                onClick={() => setShowAutoDistributeConfirmModal(true)}
+                disabled={autoDistributing || autoScopeCount === 0}
+                className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2 transition shrink-0"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>{autoDistributing ? 'Processando Divisão...' : `⚡ Redistribuir ${autoScopeCount} Leads Agora`}</span>
+              </button>
             </div>
 
-            <button
-              onClick={handleAutoDistributeByQuotas}
-              disabled={autoDistributing || totalEligibleCount === 0}
-              className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2 transition shrink-0"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>{autoDistributing ? 'Processando Divisão...' : '⚡ Dividir Automaticamente Agora'}</span>
-            </button>
+            {/* Scope Selection Pills */}
+            <div className="bg-white/80 backdrop-blur-xs p-4 rounded-xl border border-emerald-200/80 space-y-3">
+              <span className="text-xs font-bold text-neutral-800 block">
+                Selecione o Grupo de Leads para Redistribuir:
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {/* Option 1: Novos */}
+                <button
+                  type="button"
+                  onClick={() => setAutoDistributeScope('new_only')}
+                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                    autoDistributeScope === 'new_only'
+                      ? 'bg-emerald-50/90 border-emerald-600 shadow-2xs ring-2 ring-emerald-500/20'
+                      : 'bg-white border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-neutral-900">🟢 Apenas Leads Novos</span>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                      {newLeads.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Coluna "Leads" ainda não abordados (0 ligações)
+                  </p>
+                </button>
+
+                {/* Option 2: Toda a Base Existente */}
+                <button
+                  type="button"
+                  onClick={() => setAutoDistributeScope('all')}
+                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                    autoDistributeScope === 'all'
+                      ? 'bg-blue-50/90 border-blue-600 shadow-2xs ring-2 ring-blue-500/20'
+                      : 'bg-white border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-neutral-900">🔵 Toda a Base de Leads</span>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                      {leads.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Todos os leads que já existem no CRM (rebalanceia carteiras)
+                  </p>
+                </button>
+
+                {/* Option 3: Todos sem ligação */}
+                <button
+                  type="button"
+                  onClick={() => setAutoDistributeScope('all_unattempted')}
+                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                    autoDistributeScope === 'all_unattempted'
+                      ? 'bg-purple-50/90 border-purple-600 shadow-2xs ring-2 ring-purple-500/20'
+                      : 'bg-white border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-neutral-900">🟣 Sem Nenhuma Ligação</span>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
+                      {unattemptedLeads.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Leads em qualquer coluna com 0 ligações registradas
+                  </p>
+                </button>
+
+                {/* Option 4: Não fechados (Tentativas / Parados) */}
+                <button
+                  type="button"
+                  onClick={() => setAutoDistributeScope('unconverted')}
+                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                    autoDistributeScope === 'unconverted'
+                      ? 'bg-amber-50/90 border-amber-600 shadow-2xs ring-2 ring-amber-500/20'
+                      : 'bg-white border-neutral-200 hover:border-neutral-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-neutral-900">🟠 Não Fechados</span>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                      {unconvertedLeads.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Tentativas 1, 2, 3 e sem interesse (exceto Fechamento)
+                  </p>
+                </button>
+              </div>
+            </div>
           </div>
+
+          {/* Confirmation Modal */}
+          {showAutoDistributeConfirmModal && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl p-6 max-w-md w-full border border-neutral-200 shadow-2xl space-y-4 animate-in fade-in zoom-in duration-150">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-neutral-900">
+                      Confirmar Redistribuição Automática
+                    </h3>
+                    <p className="text-xs text-neutral-500">
+                      Grupo: <strong className="text-neutral-800">
+                        {autoDistributeScope === 'new_only' && 'Apenas Leads Novos (Não Abordados)'}
+                        {autoDistributeScope === 'all' && 'Toda a Base de Leads do CRM'}
+                        {autoDistributeScope === 'all_unattempted' && 'Todos os Leads sem Ligação'}
+                        {autoDistributeScope === 'unconverted' && 'Todos os Leads Não Fechados'}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200 space-y-2">
+                  <span className="text-xs font-bold text-neutral-700 block">
+                    Distribuição planejada de {autoScopeCount} leads:
+                  </span>
+                  <div className="space-y-1.5 text-xs">
+                    {salespeople.map((s) => {
+                      const pct = quotasState[s.id] ?? (s.distributionPercent || 0);
+                      const count = totalQuotaSum > 0 ? Math.round((autoScopeCount * pct) / totalQuotaSum) : 0;
+                      return (
+                        <div key={s.id} className="flex items-center justify-between">
+                          <span className="font-semibold text-neutral-800 flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                            {s.name} ({pct}%)
+                          </span>
+                          <strong className="text-emerald-700 font-mono">~{count} leads</strong>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAutoDistributeConfirmModal(false)}
+                    className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-900 rounded-xl hover:bg-neutral-100 transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAutoDistributeByQuotas}
+                    disabled={autoDistributing}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 transition"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>{autoDistributing ? 'Distribuindo...' : 'Confirmar e Executar'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Quota Sliders Card */}
           <div className="bg-white rounded-2xl p-6 border border-neutral-200 shadow-xs space-y-5">
@@ -601,7 +806,7 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {salespeople.map((s) => {
                 const currentPercent = quotasState[s.id] ?? (s.distributionPercent || 0);
-                const estimatedLeads = Math.round((totalEligibleCount * currentPercent) / 100);
+                const estimatedLeads = totalQuotaSum > 0 ? Math.round((autoScopeCount * currentPercent) / totalQuotaSum) : 0;
 
                 return (
                   <div
@@ -629,7 +834,7 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
                     />
 
                     <div className="flex items-center justify-between text-[11px] text-neutral-500 pt-1 border-t border-neutral-200/60">
-                      <span>Estimativa de leads novos:</span>
+                      <span>Estimativa no grupo selecionado:</span>
                       <strong className="text-neutral-900">{estimatedLeads} leads</strong>
                     </div>
                   </div>
@@ -746,6 +951,33 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
                 <span>{distributing ? 'Transferindo...' : 'Transferir Leads Agora'}</span>
               </button>
             </div>
+          </div>
+
+          {/* Export JSON Card (Only Names of Uncontacted Leads in Entire CRM) */}
+          <div className="bg-amber-50/70 rounded-2xl p-6 border border-amber-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1 max-w-xl">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-2xs">
+                  <FileJson className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-bold text-amber-950">
+                  Exportar Arquivo JSON (Apenas Nomes dos Leads Não Abordados)
+                </h3>
+              </div>
+              <p className="text-xs text-amber-800 leading-relaxed">
+                Baixa um arquivo <code>.json</code> contendo <strong>apenas o nome</strong> de todos os <strong>{unattemptedLeads.length} leads</strong> que ainda não foram ligados em todo o CRM (sistema inteiro, independente de vendedor).
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDownloadUncontactedNames}
+              disabled={downloadingNamesJson || unattemptedLeads.length === 0}
+              className="px-5 py-3 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 transition shrink-0"
+            >
+              <Download className="w-4 h-4" />
+              <span>{downloadingNamesJson ? 'Gerando JSON...' : `Baixar JSON (${unattemptedLeads.length} Nomes)`}</span>
+            </button>
           </div>
         </div>
       )}
