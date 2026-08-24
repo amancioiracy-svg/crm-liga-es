@@ -35,7 +35,21 @@ export interface Salesperson {
   color: string;
   bgColor: string;
   isDefault?: boolean;
+  distributionPercent?: number; // Quota % for lead distribution (e.g. 50%)
   createdAt?: string;
+  totalLeads?: number;
+  uncontactedLeads?: number;
+  inProgressLeads?: number;
+  closedLeads?: number;
+  refusedLeads?: number;
+}
+
+export interface AuthUser {
+  role: 'admin' | 'salesperson';
+  salespersonId?: string;
+  salespersonName?: string;
+  salespersonPhone?: string;
+  salesperson?: Salesperson;
 }
 
 export interface DistributeLeadsParams {

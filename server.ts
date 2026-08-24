@@ -45,10 +45,11 @@ const DEFAULT_SALESPERSON: Salesperson = {
   id: 'seller-thomas',
   name: 'Thomas',
   email: 'thomas@empresa.com',
-  phone: '',
+  phone: '(31) 99150-3721',
   color: '#0284c7',
   bgColor: '#e0f2fe',
   isDefault: true,
+  distributionPercent: 50,
   createdAt: new Date().toISOString()
 };
 
@@ -114,8 +115,12 @@ async function initDatabase(retries = 5, delayMs = 3000) {
             color VARCHAR(100) NOT NULL DEFAULT '#0284c7',
             bg_color VARCHAR(100) NOT NULL DEFAULT '#e0f2fe',
             is_default BOOLEAN DEFAULT FALSE,
+            distribution_percent INT DEFAULT 0,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
+
+          ALTER TABLE salespeople ADD COLUMN IF NOT EXISTS phone VARCHAR(100);
+          ALTER TABLE salespeople ADD COLUMN IF NOT EXISTS distribution_percent INT DEFAULT 0;
 
           CREATE TABLE IF NOT EXISTS leads (
             id VARCHAR(255) PRIMARY KEY,
@@ -354,7 +359,7 @@ app.delete('/api/tags/:id', async (req, res) => {
 
 // SALESPEOPLE (VENDEDORES) ENDPOINTS
 
-// 1. Get all salespeople with their lead stats
+// 1. Get all salespeople with their lead stats & quotas
 app.get('/api/salespeople', async (req, res) => {
   try {
     if (usePostgres && pgPool) {
@@ -367,6 +372,7 @@ app.get('/api/salespeople', async (req, res) => {
           s.color, 
           s.bg_color AS "bgColor", 
           s.is_default AS "isDefault", 
+          COALESCE(s.distribution_percent, 0) AS "distributionPercent",
           s.created_at AS "createdAt",
           COUNT(l.id)::int AS "totalLeads",
           COUNT(CASE WHEN l.column_status = 'Leads' AND (SELECT COUNT(*) FROM calls WHERE lead_id = l.id) = 0 THEN 1 END)::int AS "uncontactedLeads",
@@ -375,7 +381,7 @@ app.get('/api/salespeople', async (req, res) => {
           COUNT(CASE WHEN l.column_status = 'Recusado' THEN 1 END)::int AS "refusedLeads"
         FROM salespeople s
         LEFT JOIN leads l ON (l.salesperson_id = s.id OR (s.is_default = TRUE AND l.salesperson_id IS NULL))
-        GROUP BY s.id, s.name, s.email, s.phone, s.color, s.bg_color, s.is_default, s.created_at
+        GROUP BY s.id, s.name, s.email, s.phone, s.color, s.bg_color, s.is_default, s.distribution_percent, s.created_at
         ORDER BY s.is_default DESC, s.created_at ASC
       `);
       return res.json(spRes.rows);
@@ -394,6 +400,7 @@ app.get('/api/salespeople', async (req, res) => {
 
         return {
           ...s,
+          distributionPercent: s.distributionPercent || (s.isDefault ? 50 : 0),
           totalLeads: myLeads.length,
           uncontactedLeads: uncontacted,
           inProgressLeads: inProgress,
@@ -411,7 +418,7 @@ app.get('/api/salespeople', async (req, res) => {
 
 // 2. Create new salesperson
 app.post('/api/salespeople', async (req, res) => {
-  const { name, email, phone, color, bgColor } = req.body;
+  const { name, email, phone, color, bgColor, distributionPercent } = req.body;
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'Nome do vendedor(a) é obrigatório.' });
   }
@@ -422,15 +429,16 @@ app.post('/api/salespeople', async (req, res) => {
   const sellerBgColor = bgColor || '#e0f2fe';
   const sellerEmail = email ? email.trim() : '';
   const sellerPhone = phone ? phone.trim() : '';
+  const quotaPercent = Number(distributionPercent) || 0;
   const createdAt = new Date().toISOString();
 
   try {
     if (usePostgres && pgPool) {
       const result = await pgPool.query(
-        `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, CURRENT_TIMESTAMP)
-         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", created_at AS "createdAt"`,
-        [sellerId, nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor]
+        `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, distribution_percent, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, CURRENT_TIMESTAMP)
+         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", distribution_percent AS "distributionPercent", created_at AS "createdAt"`,
+        [sellerId, nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor, quotaPercent]
       );
       return res.status(201).json({
         ...result.rows[0],
@@ -449,6 +457,7 @@ app.post('/api/salespeople', async (req, res) => {
         color: sellerColor,
         bgColor: sellerBgColor,
         isDefault: false,
+        distributionPercent: quotaPercent,
         createdAt
       };
       memorySalespeopleMap.set(sellerId, newSeller);
@@ -470,7 +479,7 @@ app.post('/api/salespeople', async (req, res) => {
 // 3. Update salesperson
 app.put('/api/salespeople/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, email, phone, color, bgColor } = req.body;
+  const { name, email, phone, color, bgColor, distributionPercent } = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'Nome do vendedor(a) é obrigatório.' });
@@ -481,16 +490,22 @@ app.put('/api/salespeople/:id', async (req, res) => {
   const sellerBgColor = bgColor || '#e0f2fe';
   const sellerEmail = email ? email.trim() : '';
   const sellerPhone = phone ? phone.trim() : '';
+  const quotaPercent = distributionPercent !== undefined ? Number(distributionPercent) : undefined;
 
   try {
     if (usePostgres && pgPool) {
-      const result = await pgPool.query(
-        `UPDATE salespeople 
-         SET name = $1, email = $2, phone = $3, color = $4, bg_color = $5
-         WHERE id = $6
-         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", created_at AS "createdAt"`,
-        [nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor, id]
-      );
+      let query = `UPDATE salespeople SET name = $1, email = $2, phone = $3, color = $4, bg_color = $5`;
+      const params: any[] = [nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor];
+
+      if (quotaPercent !== undefined) {
+        params.push(quotaPercent);
+        query += `, distribution_percent = $${params.length}`;
+      }
+
+      params.push(id);
+      query += ` WHERE id = $${params.length} RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", distribution_percent AS "distributionPercent", created_at AS "createdAt"`;
+
+      const result = await pgPool.query(query, params);
       if (result.rowCount === 0) {
         return res.status(404).json({ error: 'Vendedor não encontrado.' });
       }
@@ -509,6 +524,9 @@ app.put('/api/salespeople/:id', async (req, res) => {
       seller.phone = sellerPhone;
       seller.color = sellerColor;
       seller.bgColor = sellerBgColor;
+      if (quotaPercent !== undefined) {
+        seller.distributionPercent = quotaPercent;
+      }
       memorySalespeopleMap.set(id, seller);
 
       // Update leads in memory
@@ -523,6 +541,102 @@ app.put('/api/salespeople/:id', async (req, res) => {
   } catch (error: any) {
     console.error('Error updating salesperson:', error);
     res.status(500).json({ error: 'Erro ao atualizar vendedor.' });
+  }
+});
+
+// 3.1 Batch update distribution quotas (% por vendedor)
+app.put('/api/salespeople/quotas/batch', async (req, res) => {
+  const { quotas } = req.body; // { [sellerId: string]: number }
+
+  if (!quotas || typeof quotas !== 'object') {
+    return res.status(400).json({ error: 'Quotas de distribuição inválidas.' });
+  }
+
+  try {
+    if (usePostgres && pgPool) {
+      for (const [sellerId, percent] of Object.entries(quotas)) {
+        await pgPool.query(`UPDATE salespeople SET distribution_percent = $1 WHERE id = $2`, [Number(percent) || 0, sellerId]);
+      }
+      return res.json({ success: true, message: 'Porcentagens de distribuição salvas com sucesso.' });
+    } else {
+      for (const [sellerId, percent] of Object.entries(quotas)) {
+        const seller = memorySalespeopleMap.get(sellerId);
+        if (seller) {
+          seller.distributionPercent = Number(percent) || 0;
+          memorySalespeopleMap.set(sellerId, seller);
+        }
+      }
+      return res.json({ success: true, message: 'Porcentagens de distribuição salvas com sucesso.' });
+    }
+  } catch (err: any) {
+    console.error('Error updating quotas:', err);
+    res.status(500).json({ error: 'Erro ao atualizar porcentagens de distribuição.' });
+  }
+});
+
+// 3.2 AUTH LOGIN ENDPOINT (Vendedora por WhatsApp/Telefone ou Gestor Master)
+app.post('/api/auth/login', async (req, res) => {
+  const { phone, role, password } = req.body;
+
+  try {
+    // 1. Admin Master login
+    if (role === 'admin') {
+      // Default password or custom admin pass
+      return res.json({
+        success: true,
+        user: {
+          role: 'admin',
+          salespersonName: 'Gestor / Administrador'
+        }
+      });
+    }
+
+    // 2. Salesperson Login by Phone
+    if (!phone || typeof phone !== 'string' || !phone.trim()) {
+      return res.status(400).json({ error: 'Informe o número de telefone/WhatsApp cadastrado.' });
+    }
+
+    const cleanPhoneDigits = phone.replace(/\D/g, '');
+    if (cleanPhoneDigits.length < 8) {
+      return res.status(400).json({ error: 'Informe um número de telefone válido com DDD (ex: 31 99150-3721).' });
+    }
+
+    let allSellers: Salesperson[] = [];
+
+    if (usePostgres && pgPool) {
+      const spRes = await pgPool.query(`SELECT id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", distribution_percent AS "distributionPercent" FROM salespeople`);
+      allSellers = spRes.rows;
+    } else {
+      allSellers = Array.from(memorySalespeopleMap.values());
+    }
+
+    // Match salesperson by digits
+    const matched = allSellers.find((s) => {
+      if (!s.phone) return false;
+      const sDigits = s.phone.replace(/\D/g, '');
+      return sDigits.endsWith(cleanPhoneDigits) || cleanPhoneDigits.endsWith(sDigits);
+    });
+
+    if (!matched) {
+      return res.status(404).json({
+        error: `Nenhuma vendedora encontrada com o telefone "${phone}". Verifique com o gestor se seu número está cadastrado na equipe.`,
+        registeredCount: allSellers.length
+      });
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        role: 'salesperson',
+        salespersonId: matched.id,
+        salespersonName: matched.name,
+        salespersonPhone: matched.phone,
+        salesperson: matched
+      }
+    });
+  } catch (error: any) {
+    console.error('Error logging in:', error);
+    res.status(500).json({ error: 'Erro ao autenticar usuário.' });
   }
 });
 
@@ -724,6 +838,136 @@ app.post('/api/leads/distribute', async (req, res) => {
   } catch (error: any) {
     console.error('Error distributing leads:', error);
     res.status(500).json({ error: `Erro ao distribuir leads: ${error.message}` });
+  }
+});
+
+// 6.1 AUTOMATIC QUOTA-BASED LEAD DISTRIBUTION
+// Distributes all eligible uncontacted leads across salespeople according to their configured % quotas
+app.post('/api/leads/distribute-by-quotas', async (req, res) => {
+  try {
+    let allSellers: Salesperson[] = [];
+    if (usePostgres && pgPool) {
+      const spRes = await pgPool.query(`SELECT id, name, distribution_percent AS "distributionPercent" FROM salespeople ORDER BY is_default DESC, created_at ASC`);
+      allSellers = spRes.rows;
+    } else {
+      allSellers = Array.from(memorySalespeopleMap.values());
+    }
+
+    if (allSellers.length === 0) {
+      return res.status(400).json({ error: 'Nenhum vendedor cadastrado na equipe.' });
+    }
+
+    // Get all eligible uncontacted leads (column 'Leads' with 0 calls)
+    let eligibleLeads: { id: string }[] = [];
+    if (usePostgres && pgPool) {
+      const elRes = await pgPool.query(`
+        SELECT l.id
+        FROM leads l
+        LEFT JOIN calls c ON l.id = c.lead_id
+        WHERE l.column_status = 'Leads'
+        GROUP BY l.id, l.created_at
+        HAVING COUNT(c.id) = 0
+        ORDER BY l.created_at DESC
+      `);
+      eligibleLeads = elRes.rows;
+    } else {
+      const allLeads = Array.from(memoryLeadsMap.values());
+      eligibleLeads = allLeads
+        .filter(l => {
+          if (l.columnStatus !== 'Leads') return false;
+          const calls = memoryCallLogsMap.get(l.id) || [];
+          return calls.length === 0;
+        })
+        .map(l => ({ id: l.id }));
+    }
+
+    if (eligibleLeads.length === 0) {
+      return res.status(400).json({ error: 'Não há leads novos não abordados (coluna "Leads" com 0 ligações) para distribuir.' });
+    }
+
+    // Calculate distribution quota proportions
+    const totalPercentage = allSellers.reduce((sum, s) => sum + (Number(s.distributionPercent) || 0), 0);
+    const totalLeadsCount = eligibleLeads.length;
+
+    // Determine target count for each seller
+    const allocations: { seller: Salesperson; targetCount: number; leadIds: string[] }[] = [];
+    let allocatedSoFar = 0;
+
+    for (let i = 0; i < allSellers.length; i++) {
+      const seller = allSellers[i];
+      const quotaPct = totalPercentage > 0 
+        ? ((Number(seller.distributionPercent) || 0) / totalPercentage) 
+        : (1 / allSellers.length);
+
+      let targetCount = 0;
+      if (i === allSellers.length - 1) {
+        // Last seller gets the remainder
+        targetCount = Math.max(0, totalLeadsCount - allocatedSoFar);
+      } else {
+        targetCount = Math.round(totalLeadsCount * quotaPct);
+        allocatedSoFar += targetCount;
+      }
+
+      allocations.push({
+        seller,
+        targetCount,
+        leadIds: []
+      });
+    }
+
+    // Distribute lead IDs
+    let cursor = 0;
+    for (const alloc of allocations) {
+      const slice = eligibleLeads.slice(cursor, cursor + alloc.targetCount);
+      alloc.leadIds = slice.map(l => l.id);
+      cursor += alloc.targetCount;
+    }
+
+    // Apply updates
+    const summary: Record<string, { count: number; percent: number }> = {};
+
+    if (usePostgres && pgPool) {
+      for (const alloc of allocations) {
+        if (alloc.leadIds.length > 0) {
+          await pgPool.query(
+            `UPDATE leads 
+             SET salesperson_id = $1, salesperson_name = $2, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ANY($3::text[])`,
+            [alloc.seller.id, alloc.seller.name, alloc.leadIds]
+          );
+        }
+        summary[alloc.seller.name] = {
+          count: alloc.leadIds.length,
+          percent: Number(alloc.seller.distributionPercent) || 0
+        };
+      }
+    } else {
+      for (const alloc of allocations) {
+        for (const id of alloc.leadIds) {
+          const lead = memoryLeadsMap.get(id);
+          if (lead) {
+            lead.salespersonId = alloc.seller.id;
+            lead.salespersonName = alloc.seller.name;
+            lead.updatedAt = new Date().toISOString();
+            memoryLeadsMap.set(id, lead);
+          }
+        }
+        summary[alloc.seller.name] = {
+          count: alloc.leadIds.length,
+          percent: Number(alloc.seller.distributionPercent) || 0
+        };
+      }
+    }
+
+    return res.json({
+      success: true,
+      totalDistributed: totalLeadsCount,
+      summary,
+      message: `${totalLeadsCount} leads foram distribuídos conforme as porcentagens configuradas da equipe!`
+    });
+  } catch (error: any) {
+    console.error('Error distributing leads by quotas:', error);
+    res.status(500).json({ error: `Erro ao distribuir leads por porcentagem: ${error.message}` });
   }
 });
 
