@@ -1,6 +1,6 @@
 {
-  "name": "Nyroh CRM Call",
-  "description": "Sistema CRM minimalista e poderoso para gestão de leads, pipeline Kanban, registro de ligações com auto-discagem, divisão inteligente por porcentagem e controle de acesso por WhatsApp para vendedoras e gestor.",
+  "name": "Remix CRM de Leads e Ligações",
+  "description": "Sistema CRM minimalista para gestão de leads, pipeline Kanban, registro de ligações, equipe de vendedores com divisão inteligente de novos leads e persistência PostgreSQL no Railway.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

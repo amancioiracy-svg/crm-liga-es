@@ -1,35 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lead, ColumnStatus, CustomTag, Salesperson } from './types';
-import { Sidebar, AuthUser, MainAppTab } from './components/Sidebar';
+import { Sidebar } from './components/Sidebar';
 import { KanbanBoard } from './components/KanbanBoard';
 import { AllLeadsTable } from './components/AllLeadsTable';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
-import { SalesTeamManagementView } from './components/SalesTeamManagementView';
 import { LeadDetailModal } from './components/LeadDetailModal';
 import { TagManagerModal } from './components/TagManagerModal';
 import { ZipUploadModal } from './components/ZipUploadModal';
 import { JsonBatchUpdateModal } from './components/JsonBatchUpdateModal';
 import { SalesTeamModal } from './components/SalesTeamModal';
 import { WhatsAppSettingsModal } from './components/WhatsAppSettingsModal';
-import { LoginScreen } from './components/LoginScreen';
 import { MetricsBar } from './components/MetricsBar';
 import { Toast } from './components/Toast';
-import { PhoneCall, Users, CheckCircle, RefreshCw, UserCheck, Share2, Plus, ArrowLeft, ExternalLink, LogOut, Shield } from 'lucide-react';
+import { PhoneCall, Users, CheckCircle, RefreshCw, UserCheck, Share2, Plus, ArrowLeft, ExternalLink } from 'lucide-react';
 import { getSalespersonSlug, matchSalespersonFromRoute } from './lib/salesperson';
 
-const AUTH_STORAGE_KEY = 'nyroh_crm_auth_user';
-
 export default function App() {
-  // Auth state
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tags, setTags] = useState<CustomTag[]>([]);
   const [salespeople, setSalespeople] = useState<Salesperson[]>([
@@ -38,7 +24,7 @@ export default function App() {
   const [selectedSalespersonId, setSelectedSalespersonId] = useState<string>('ALL');
   const [routeSalespersonSlug, setRouteSalespersonSlug] = useState<string | null>(null);
   const [loadingLeads, setLoadingLeads] = useState(true);
-  const [activeTab, setActiveTab] = useState<MainAppTab>('kanban');
+  const [activeTab, setActiveTab] = useState<'kanban' | 'table' | 'dashboard'>('kanban');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
   
   // Modals & Toasts
@@ -50,40 +36,6 @@ export default function App() {
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sync current user with selected salesperson filter
-  useEffect(() => {
-    if (currentUser?.role === 'salesperson' && currentUser.salespersonId) {
-      setSelectedSalespersonId(currentUser.salespersonId);
-    }
-  }, [currentUser]);
-
-  // Handle Login Success
-  const handleLoginSuccess = (user: AuthUser) => {
-    setCurrentUser(user);
-    try {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-    } catch (e) {
-      console.error(e);
-    }
-    if (user.role === 'salesperson' && user.salespersonId) {
-      setSelectedSalespersonId(user.salespersonId);
-    } else {
-      setSelectedSalespersonId('ALL');
-    }
-    showToast(`Bem-vindo(a), ${user.salespersonName || 'ao sistema'}!`);
-  };
-
-  // Handle Logout
-  const handleLogout = () => {
-    setCurrentUser(null);
-    try {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
-    } catch (e) {
-      console.error(e);
-    }
-    showToast('Sessão encerrada com sucesso.');
-  };
-
   // Parse salesperson route from URL (e.g. /v/thomas or /v/seller-thomas or /vendedor/thomas)
   const parseCurrentRoute = useCallback((allSellers: Salesperson[]) => {
     if (typeof window === 'undefined') return;
@@ -94,13 +46,13 @@ export default function App() {
       const identifier = match[1];
       setRouteSalespersonSlug(identifier);
       const matchedSeller = matchSalespersonFromRoute(identifier, allSellers);
-      if (matchedSeller && currentUser?.role !== 'salesperson') {
+      if (matchedSeller) {
         setSelectedSalespersonId(matchedSeller.id);
       }
     } else {
       setRouteSalespersonSlug(null);
     }
-  }, [currentUser]);
+  }, []);
 
   useEffect(() => {
     fetchTags();
@@ -116,10 +68,8 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [salespeople, parseCurrentRoute]);
 
-  // Navigate to salesperson route (admin only)
+  // Navigate to salesperson route
   const handleNavigateToSalesperson = (sellerIdOrAll: string) => {
-    if (currentUser?.role === 'salesperson') return; // Salesperson is locked to their own leads
-
     if (sellerIdOrAll === 'ALL') {
       setSelectedSalespersonId('ALL');
       setRouteSalespersonSlug(null);
@@ -161,11 +111,12 @@ export default function App() {
   // Re-fetch leads when selected salesperson changes or on initial load
   useEffect(() => {
     fetchLeads();
-  }, [selectedSalespersonId, currentUser]);
+  }, [selectedSalespersonId]);
 
   const fetchLeads = async () => {
     setLoadingLeads(true);
     try {
+      // If a specific salesperson route is active, we can fetch their isolated leads or full list
       const res = await fetch('/api/leads');
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
@@ -227,7 +178,7 @@ export default function App() {
     }
   };
 
-  // Atribuir lead a um vendedor específico (Admin only)
+  // Atribuir lead a um vendedor específico
   const handleReassignLead = async (leadId: string, salespersonId: string, salespersonName: string) => {
     // Atualização otimista na UI
     setLeads((prev) =>
@@ -308,29 +259,10 @@ export default function App() {
     }
   };
 
-  // IF NOT AUTHENTICATED: RENDER LOGIN SCREEN DIRECTLY
-  if (!currentUser) {
-    return (
-      <>
-        <LoginScreen
-          onLoginSuccess={handleLoginSuccess}
-          salespeople={salespeople}
-          onShowToast={showToast}
-        />
-        <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
-      </>
-    );
-  }
-
-  const isAdmin = currentUser.role === 'admin';
-
-  // Filter leads by selected tags AND selected salesperson (or lock to current salesperson)
+  // Filter leads by selected tags AND selected salesperson
   const displayedLeads = leads.filter((l) => {
-    // 1. Salesperson isolation
-    if (!isAdmin && currentUser.salespersonId) {
-      const sellerId = l.salespersonId || 'seller-thomas';
-      if (sellerId !== currentUser.salespersonId) return false;
-    } else if (selectedSalespersonId !== 'ALL') {
+    // 1. Salesperson filter
+    if (selectedSalespersonId !== 'ALL') {
       const sellerId = l.salespersonId || 'seller-thomas';
       if (sellerId !== selectedSalespersonId) return false;
     }
@@ -342,7 +274,7 @@ export default function App() {
     return selectedTagFilters.some((fTag) => lTags.includes(fTag));
   });
 
-  const activeSalesperson = salespeople.find((s) => s.id === (isAdmin ? selectedSalespersonId : currentUser.salespersonId));
+  const activeSalesperson = salespeople.find((s) => s.id === selectedSalespersonId);
 
   return (
     <div className="flex flex-col xl:flex-row h-screen bg-[#f8f9fa] text-neutral-900 font-sans antialiased overflow-hidden">
@@ -355,17 +287,15 @@ export default function App() {
         onOpenSalesTeamModal={() => setIsSalesTeamModalOpen(true)}
         onOpenWhatsAppSettings={() => setIsWhatsAppModalOpen(true)}
         onSeedSamples={handleSeedSamples}
-        totalLeads={displayedLeads.length}
+        totalLeads={leads.length}
         salespeopleCount={salespeople.length}
         activeSalesperson={activeSalesperson}
         onClearSalespersonFilter={() => handleNavigateToSalesperson('ALL')}
-        currentUser={currentUser}
-        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden">
-        {/* Top Navbar Header */}
+        {/* Top Navbar Header with Salesperson Selector & Dedicated Instance indicator */}
         <header className="bg-white border-b border-neutral-200 px-3 md:px-6 py-2 md:py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0 shadow-2xs z-10">
           <div className="min-w-0 flex items-center gap-3">
             <div>
@@ -379,7 +309,7 @@ export default function App() {
                 </h2>
                 {activeSalesperson && (
                   <span
-                    className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border shadow-2xs"
+                    className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border shadow-2xs"
                     style={{
                       backgroundColor: activeSalesperson.bgColor || '#e0f2fe',
                       color: activeSalesperson.color || '#0284c7',
@@ -387,105 +317,86 @@ export default function App() {
                     }}
                   >
                     <UserCheck className="w-3 h-3" />
-                    <span>{isAdmin ? `Instância: ${activeSalesperson.name}` : `Minha Carteira: ${activeSalesperson.name}`}</span>
+                    <span>Instância: {activeSalesperson.name}</span>
                   </span>
                 )}
               </div>
               <p className="text-[10px] md:text-[11px] text-neutral-500 truncate">
-                {displayedLeads.length} lead(s) na sua visualização
-                {isAdmin && selectedSalespersonId === 'ALL' && ` • Visão Master de Toda a Equipe`}
+                {displayedLeads.length} de {leads.length} lead(s)
+                {selectedSalespersonId !== 'ALL' && activeSalesperson && ` • Carteira Isolada`}
                 {selectedTagFilters.length > 0 && ` • (${selectedTagFilters.length} tag(s))`}
               </p>
             </div>
           </div>
 
-          {/* Right actions & Switcher */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* If Admin: show team switcher tabs */}
-            {isAdmin && (
-              <div className="flex items-center bg-neutral-100/90 p-1 rounded-xl border border-neutral-200 shadow-2xs">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider px-2 hidden sm:inline-block">
-                  Rota:
-                </span>
-
-                {/* All Sellers Button */}
-                <button
-                  onClick={() => handleNavigateToSalesperson('ALL')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    selectedSalespersonId === 'ALL'
-                      ? 'bg-white text-neutral-900 shadow-2xs font-bold'
-                      : 'text-neutral-600 hover:text-neutral-900'
-                  }`}
-                  title="Visualizar visão geral de todos os vendedores"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Geral</span>
-                  <span className="text-[10px] font-mono bg-neutral-200 text-neutral-700 px-1.5 py-0.2 rounded-full font-bold">
-                    {leads.length}
-                  </span>
-                </button>
-
-                {/* Individual Salesperson Pills */}
-                {salespeople.map((seller) => {
-                  const sellerLeadCount = leads.filter(l => (l.salespersonId || 'seller-thomas') === seller.id).length;
-                  const isSelected = selectedSalespersonId === seller.id;
-
-                  return (
-                    <button
-                      key={seller.id}
-                      onClick={() => handleNavigateToSalesperson(seller.id)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                        isSelected
-                          ? 'bg-white text-blue-700 shadow-2xs ring-1 ring-neutral-200 font-bold'
-                          : 'text-neutral-600 hover:text-neutral-900'
-                      }`}
-                      title={`Abrir rota /v/${getSalespersonSlug(seller)}`}
-                    >
-                      <span 
-                        className="w-2.5 h-2.5 rounded-full shrink-0" 
-                        style={{ backgroundColor: seller.color || '#0284c7' }}
-                      />
-                      <span className="truncate max-w-[90px]">{seller.name}</span>
-                      <span 
-                        className="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold"
-                        style={{
-                          backgroundColor: isSelected ? seller.bgColor || '#e0f2fe' : '#e5e7eb',
-                          color: isSelected ? seller.color || '#0284c7' : '#374151'
-                        }}
-                      >
-                        {sellerLeadCount}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Admin Team & Distribution Action Button */}
-            {isAdmin && (
-              <button
-                onClick={() => setIsSalesTeamModalOpen(true)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
-                title="Cadastrar vendedoras e dividir carteira de novos leads"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Equipe & Distribuir</span>
-              </button>
-            )}
-
-            {/* User Logged in Badge + Logout */}
-            <div className="flex items-center gap-1 bg-neutral-100 py-1 px-2 rounded-xl border border-neutral-200 text-xs">
-              <span className="font-semibold text-neutral-800 truncate max-w-[120px]">
-                {currentUser.salespersonName || 'Usuário'}
+          {/* Salesperson Quick Tabs / Selector & Routing Switcher */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center bg-neutral-100/90 p-1 rounded-xl border border-neutral-200 shadow-2xs">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider px-2 hidden sm:inline-block">
+                Rota:
               </span>
+
+              {/* All Sellers Button */}
               <button
-                onClick={handleLogout}
-                className="p-1 text-neutral-500 hover:text-rose-600 hover:bg-white rounded-lg transition"
-                title="Sair / Trocar de Conta"
+                onClick={() => handleNavigateToSalesperson('ALL')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  selectedSalespersonId === 'ALL'
+                    ? 'bg-white text-neutral-900 shadow-2xs font-bold'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+                title="Visualizar visão geral de todos os vendedores"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <Users className="w-3.5 h-3.5" />
+                <span>Geral</span>
+                <span className="text-[10px] font-mono bg-neutral-200 text-neutral-700 px-1.5 py-0.2 rounded-full font-bold">
+                  {leads.length}
+                </span>
               </button>
+
+              {/* Individual Salesperson Pills with Dedicated Route Swapping */}
+              {salespeople.map((seller) => {
+                const sellerLeadCount = leads.filter(l => (l.salespersonId || 'seller-thomas') === seller.id).length;
+                const isSelected = selectedSalespersonId === seller.id;
+
+                return (
+                  <button
+                    key={seller.id}
+                    onClick={() => handleNavigateToSalesperson(seller.id)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      isSelected
+                        ? 'bg-white text-blue-700 shadow-2xs ring-1 ring-neutral-200 font-bold'
+                        : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                    title={`Abrir rota exclusiva /v/${getSalespersonSlug(seller)}`}
+                  >
+                    <span 
+                      className="w-2.5 h-2.5 rounded-full shrink-0" 
+                      style={{ backgroundColor: seller.color || '#0284c7' }}
+                    />
+                    <span className="truncate max-w-[90px]">{seller.name}</span>
+                    <span 
+                      className="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold"
+                      style={{
+                        backgroundColor: isSelected ? seller.bgColor || '#e0f2fe' : '#e5e7eb',
+                        color: isSelected ? seller.color || '#0284c7' : '#374151'
+                      }}
+                    >
+                      {sellerLeadCount}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Manage Sales Team & Distribute Leads Action Button */}
+            <button
+              onClick={() => setIsSalesTeamModalOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
+              title="Cadastrar vendedores e dividir carteira de novos leads"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Equipe & Distribuir</span>
+            </button>
 
             {/* Refresh Button */}
             <button
@@ -501,12 +412,12 @@ export default function App() {
           </div>
         </header>
 
-        {/* Barra de Métricas & Filtros de Vendas */}
-        {activeTab !== 'dashboard' && activeTab !== 'team' && (
+        {/* Barra de Métricas & Filtros de Vendas (Métricas 100% isoladas para o vendedor selecionado) */}
+        {activeTab !== 'dashboard' && (
           <MetricsBar
             leads={displayedLeads}
             tags={tags}
-            selectedSalespersonId={isAdmin ? selectedSalespersonId : (currentUser.salespersonId || 'seller-thomas')}
+            selectedSalespersonId={selectedSalespersonId}
             selectedTagFilters={selectedTagFilters}
             onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
             onShowToast={showToast}
@@ -539,22 +450,14 @@ export default function App() {
               onShowToast={showToast}
               onOpenJsonBatchModal={() => setIsJsonModalOpen(true)}
             />
-          ) : activeTab === 'dashboard' ? (
+          ) : (
             <AnalyticsDashboard
               leads={displayedLeads}
               allLeads={leads}
               tags={tags}
               salespeople={salespeople}
-              selectedSalespersonId={isAdmin ? selectedSalespersonId : (currentUser.salespersonId || 'seller-thomas')}
+              selectedSalespersonId={selectedSalespersonId}
               onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
-              onShowToast={showToast}
-            />
-          ) : (
-            <SalesTeamManagementView
-              salespeople={salespeople}
-              leads={leads}
-              onRefreshSalespeople={fetchSalespeople}
-              onRefreshLeads={fetchLeads}
               onShowToast={showToast}
             />
           )}

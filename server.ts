@@ -45,11 +45,10 @@ const DEFAULT_SALESPERSON: Salesperson = {
   id: 'seller-thomas',
   name: 'Thomas',
   email: 'thomas@empresa.com',
-  phone: '(31) 99150-3721',
+  phone: '',
   color: '#0284c7',
   bgColor: '#e0f2fe',
   isDefault: true,
-  distributionPercent: 50,
   createdAt: new Date().toISOString()
 };
 
@@ -115,12 +114,8 @@ async function initDatabase(retries = 5, delayMs = 3000) {
             color VARCHAR(100) NOT NULL DEFAULT '#0284c7',
             bg_color VARCHAR(100) NOT NULL DEFAULT '#e0f2fe',
             is_default BOOLEAN DEFAULT FALSE,
-            distribution_percent INT DEFAULT 0,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
-
-          ALTER TABLE salespeople ADD COLUMN IF NOT EXISTS phone VARCHAR(100);
-          ALTER TABLE salespeople ADD COLUMN IF NOT EXISTS distribution_percent INT DEFAULT 0;
 
           CREATE TABLE IF NOT EXISTS leads (
             id VARCHAR(255) PRIMARY KEY,
@@ -168,24 +163,6 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           SET salesperson_id = 'seller-thomas', salesperson_name = 'Thomas'
           WHERE salesperson_id IS NULL OR salesperson_id = '';
         `);
-
-        // Backfill / Normalize all existing lead URLs to official Nyroh site URLs
-        const leadsToFix = await client.query(`
-          SELECT id, name, public_url FROM leads 
-          WHERE public_url IS NULL 
-             OR public_url = '' 
-             OR public_url LIKE '%maps.google.com%' 
-             OR public_url LIKE '%google.com/maps%'
-             OR public_url LIKE '%goo.gl%'
-        `);
-
-        for (const r of leadsToFix.rows) {
-          const nyrohLink = `https://www.nyroh.com.br/#/site/${slugify(r.name)}`;
-          await client.query(`UPDATE leads SET public_url = $1 WHERE id = $2`, [nyrohLink, r.id]);
-        }
-        if (leadsToFix.rows.length > 0) {
-          console.log(`✅ ${leadsToFix.rows.length} URLs de leads atualizadas para o formato Nyroh (https://www.nyroh.com.br/#/site/...)`);
-        }
 
         // Seed default tags if table is empty
         const tagCountRes = await client.query(`SELECT COUNT(*)::int AS count FROM custom_tags`);
@@ -377,7 +354,7 @@ app.delete('/api/tags/:id', async (req, res) => {
 
 // SALESPEOPLE (VENDEDORES) ENDPOINTS
 
-// 1. Get all salespeople with their lead stats & quotas
+// 1. Get all salespeople with their lead stats
 app.get('/api/salespeople', async (req, res) => {
   try {
     if (usePostgres && pgPool) {
@@ -390,7 +367,6 @@ app.get('/api/salespeople', async (req, res) => {
           s.color, 
           s.bg_color AS "bgColor", 
           s.is_default AS "isDefault", 
-          COALESCE(s.distribution_percent, 0) AS "distributionPercent",
           s.created_at AS "createdAt",
           COUNT(l.id)::int AS "totalLeads",
           COUNT(CASE WHEN l.column_status = 'Leads' AND (SELECT COUNT(*) FROM calls WHERE lead_id = l.id) = 0 THEN 1 END)::int AS "uncontactedLeads",
@@ -399,7 +375,7 @@ app.get('/api/salespeople', async (req, res) => {
           COUNT(CASE WHEN l.column_status = 'Recusado' THEN 1 END)::int AS "refusedLeads"
         FROM salespeople s
         LEFT JOIN leads l ON (l.salesperson_id = s.id OR (s.is_default = TRUE AND l.salesperson_id IS NULL))
-        GROUP BY s.id, s.name, s.email, s.phone, s.color, s.bg_color, s.is_default, s.distribution_percent, s.created_at
+        GROUP BY s.id, s.name, s.email, s.phone, s.color, s.bg_color, s.is_default, s.created_at
         ORDER BY s.is_default DESC, s.created_at ASC
       `);
       return res.json(spRes.rows);
@@ -418,7 +394,6 @@ app.get('/api/salespeople', async (req, res) => {
 
         return {
           ...s,
-          distributionPercent: s.distributionPercent || (s.isDefault ? 50 : 0),
           totalLeads: myLeads.length,
           uncontactedLeads: uncontacted,
           inProgressLeads: inProgress,
@@ -436,7 +411,7 @@ app.get('/api/salespeople', async (req, res) => {
 
 // 2. Create new salesperson
 app.post('/api/salespeople', async (req, res) => {
-  const { name, email, phone, color, bgColor, distributionPercent } = req.body;
+  const { name, email, phone, color, bgColor } = req.body;
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'Nome do vendedor(a) é obrigatório.' });
   }
@@ -447,16 +422,15 @@ app.post('/api/salespeople', async (req, res) => {
   const sellerBgColor = bgColor || '#e0f2fe';
   const sellerEmail = email ? email.trim() : '';
   const sellerPhone = phone ? phone.trim() : '';
-  const quotaPercent = Number(distributionPercent) || 0;
   const createdAt = new Date().toISOString();
 
   try {
     if (usePostgres && pgPool) {
       const result = await pgPool.query(
-        `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, distribution_percent, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, CURRENT_TIMESTAMP)
-         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", distribution_percent AS "distributionPercent", created_at AS "createdAt"`,
-        [sellerId, nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor, quotaPercent]
+        `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, CURRENT_TIMESTAMP)
+         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", created_at AS "createdAt"`,
+        [sellerId, nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor]
       );
       return res.status(201).json({
         ...result.rows[0],
@@ -475,7 +449,6 @@ app.post('/api/salespeople', async (req, res) => {
         color: sellerColor,
         bgColor: sellerBgColor,
         isDefault: false,
-        distributionPercent: quotaPercent,
         createdAt
       };
       memorySalespeopleMap.set(sellerId, newSeller);
@@ -497,7 +470,7 @@ app.post('/api/salespeople', async (req, res) => {
 // 3. Update salesperson
 app.put('/api/salespeople/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, email, phone, color, bgColor, distributionPercent } = req.body;
+  const { name, email, phone, color, bgColor } = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'Nome do vendedor(a) é obrigatório.' });
@@ -508,22 +481,16 @@ app.put('/api/salespeople/:id', async (req, res) => {
   const sellerBgColor = bgColor || '#e0f2fe';
   const sellerEmail = email ? email.trim() : '';
   const sellerPhone = phone ? phone.trim() : '';
-  const quotaPercent = distributionPercent !== undefined ? Number(distributionPercent) : undefined;
 
   try {
     if (usePostgres && pgPool) {
-      let query = `UPDATE salespeople SET name = $1, email = $2, phone = $3, color = $4, bg_color = $5`;
-      const params: any[] = [nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor];
-
-      if (quotaPercent !== undefined) {
-        params.push(quotaPercent);
-        query += `, distribution_percent = $${params.length}`;
-      }
-
-      params.push(id);
-      query += ` WHERE id = $${params.length} RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", distribution_percent AS "distributionPercent", created_at AS "createdAt"`;
-
-      const result = await pgPool.query(query, params);
+      const result = await pgPool.query(
+        `UPDATE salespeople 
+         SET name = $1, email = $2, phone = $3, color = $4, bg_color = $5
+         WHERE id = $6
+         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", created_at AS "createdAt"`,
+        [nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor, id]
+      );
       if (result.rowCount === 0) {
         return res.status(404).json({ error: 'Vendedor não encontrado.' });
       }
@@ -542,9 +509,6 @@ app.put('/api/salespeople/:id', async (req, res) => {
       seller.phone = sellerPhone;
       seller.color = sellerColor;
       seller.bgColor = sellerBgColor;
-      if (quotaPercent !== undefined) {
-        seller.distributionPercent = quotaPercent;
-      }
       memorySalespeopleMap.set(id, seller);
 
       // Update leads in memory
@@ -559,104 +523,6 @@ app.put('/api/salespeople/:id', async (req, res) => {
   } catch (error: any) {
     console.error('Error updating salesperson:', error);
     res.status(500).json({ error: 'Erro ao atualizar vendedor.' });
-  }
-});
-
-// 3.1 Batch update distribution quotas (% por vendedor)
-app.put('/api/salespeople/quotas/batch', async (req, res) => {
-  const { quotas } = req.body; // { [sellerId: string]: number }
-
-  if (!quotas || typeof quotas !== 'object') {
-    return res.status(400).json({ error: 'Quotas de distribuição inválidas.' });
-  }
-
-  try {
-    if (usePostgres && pgPool) {
-      for (const [sellerId, percent] of Object.entries(quotas)) {
-        await pgPool.query(`UPDATE salespeople SET distribution_percent = $1 WHERE id = $2`, [Number(percent) || 0, sellerId]);
-      }
-      return res.json({ success: true, message: 'Porcentagens de distribuição salvas com sucesso.' });
-    } else {
-      for (const [sellerId, percent] of Object.entries(quotas)) {
-        const seller = memorySalespeopleMap.get(sellerId);
-        if (seller) {
-          seller.distributionPercent = Number(percent) || 0;
-          memorySalespeopleMap.set(sellerId, seller);
-        }
-      }
-      return res.json({ success: true, message: 'Porcentagens de distribuição salvas com sucesso.' });
-    }
-  } catch (err: any) {
-    console.error('Error updating quotas:', err);
-    res.status(500).json({ error: 'Erro ao atualizar porcentagens de distribuição.' });
-  }
-});
-
-// 3.2 AUTH LOGIN ENDPOINT (Vendedora por WhatsApp/Telefone ou Gestor Master)
-app.post('/api/auth/login', async (req, res) => {
-  const { phone, role, password } = req.body;
-
-  try {
-    // 1. Admin Master login
-    if (role === 'admin') {
-      if (password !== 'thomas3249') {
-        return res.status(401).json({ error: 'Senha incorreta para o Acesso Gestor Master.' });
-      }
-      return res.json({
-        success: true,
-        user: {
-          role: 'admin',
-          salespersonName: 'Thomas (Gestor Master)'
-        }
-      });
-    }
-
-    // 2. Salesperson Login by Phone
-    if (!phone || typeof phone !== 'string' || !phone.trim()) {
-      return res.status(400).json({ error: 'Informe o número de telefone/WhatsApp cadastrado.' });
-    }
-
-    const cleanPhoneDigits = phone.replace(/\D/g, '');
-    if (cleanPhoneDigits.length < 8) {
-      return res.status(400).json({ error: 'Informe um número de telefone válido com DDD (ex: 31 99150-3721).' });
-    }
-
-    let allSellers: Salesperson[] = [];
-
-    if (usePostgres && pgPool) {
-      const spRes = await pgPool.query(`SELECT id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", distribution_percent AS "distributionPercent" FROM salespeople`);
-      allSellers = spRes.rows;
-    } else {
-      allSellers = Array.from(memorySalespeopleMap.values());
-    }
-
-    // Match salesperson by digits
-    const matched = allSellers.find((s) => {
-      if (!s.phone) return false;
-      const sDigits = s.phone.replace(/\D/g, '');
-      return sDigits.endsWith(cleanPhoneDigits) || cleanPhoneDigits.endsWith(sDigits);
-    });
-
-    if (!matched) {
-      return res.status(404).json({
-        error: `Nenhuma vendedora encontrada com o telefone "${phone}". Verifique com o gestor se seu número está cadastrado na equipe.`,
-        registeredCount: allSellers.length
-      });
-    }
-
-    return res.json({
-      success: true,
-      user: {
-        role: 'salesperson',
-        salespersonId: matched.id,
-        salespersonName: matched.name,
-        salespersonPhone: matched.phone,
-        salesperson: matched
-      }
-    });
-  } catch (error: any) {
-    console.error('Error logging in:', error);
-    res.status(500).json({ error: 'Erro ao autenticar usuário.' });
   }
 });
 
@@ -861,340 +727,6 @@ app.post('/api/leads/distribute', async (req, res) => {
   }
 });
 
-// 6.1 AUTOMATIC QUOTA-BASED LEAD DISTRIBUTION
-// Distributes selected scope of leads across salespeople according to their configured % quotas
-app.post('/api/leads/distribute-by-quotas', async (req, res) => {
-  const { targetScope = 'new_only', sourceSalespersonId, quotas } = req.body || {};
-  try {
-    // If client sent current quotas state, optionally update DB quotas first
-    if (quotas && typeof quotas === 'object') {
-      if (usePostgres && pgPool) {
-        for (const [sId, pct] of Object.entries(quotas)) {
-          await pgPool.query(
-            `UPDATE salespeople SET distribution_percent = $1 WHERE id = $2`,
-            [Number(pct) || 0, sId]
-          );
-        }
-      } else {
-        for (const [sId, pct] of Object.entries(quotas)) {
-          const seller = memorySalespeopleMap.get(sId);
-          if (seller) {
-            seller.distributionPercent = Number(pct) || 0;
-          }
-        }
-      }
-    }
-
-    let allSellers: Salesperson[] = [];
-    if (usePostgres && pgPool) {
-      const spRes = await pgPool.query(`SELECT id, name, distribution_percent AS "distributionPercent" FROM salespeople ORDER BY is_default DESC, created_at ASC`);
-      allSellers = spRes.rows;
-    } else {
-      allSellers = Array.from(memorySalespeopleMap.values());
-    }
-
-    // Override with in-memory / payload quotas if provided
-    if (quotas && typeof quotas === 'object') {
-      allSellers = allSellers.map(s => ({
-        ...s,
-        distributionPercent: quotas[s.id] !== undefined ? Number(quotas[s.id]) || 0 : (s.distributionPercent || 0)
-      }));
-    }
-
-    if (allSellers.length === 0) {
-      return res.status(400).json({ error: 'Nenhum vendedor cadastrado na equipe.' });
-    }
-
-    // Get eligible leads based on targetScope
-    // 'new_only': Column 'Leads' (case-insensitive) and 0 calls
-    // 'all_unattempted': Any column with 0 calls
-    // 'all': Entire base of leads (re-split existing and new)
-    // 'unconverted': Leads that are NOT in 'fechamento' (e.g. tentativa 1, 2, 3, sem_interesse, etc.)
-    let eligibleLeads: { id: string }[] = [];
-    
-    if (usePostgres && pgPool) {
-      let query = '';
-      const params: any[] = [];
-
-      if (targetScope === 'new_only') {
-        query = `
-          SELECT l.id
-          FROM leads l
-          LEFT JOIN calls c ON l.id = c.lead_id
-          WHERE LOWER(l.column_status) = 'leads'
-        `;
-        if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
-          params.push(sourceSalespersonId);
-          query += ` AND l.salesperson_id = $${params.length}`;
-        }
-        query += `
-          GROUP BY l.id, l.created_at
-          HAVING COUNT(c.id) = 0
-          ORDER BY l.created_at DESC
-        `;
-      } else if (targetScope === 'all_unattempted') {
-        query = `
-          SELECT l.id
-          FROM leads l
-          LEFT JOIN calls c ON l.id = c.lead_id
-        `;
-        if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
-          params.push(sourceSalespersonId);
-          query += ` WHERE l.salesperson_id = $${params.length}`;
-        }
-        query += `
-          GROUP BY l.id, l.created_at
-          HAVING COUNT(c.id) = 0
-          ORDER BY l.created_at DESC
-        `;
-      } else if (targetScope === 'unconverted') {
-        query = `
-          SELECT l.id
-          FROM leads l
-          WHERE LOWER(l.column_status) != 'fechamento'
-        `;
-        if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
-          params.push(sourceSalespersonId);
-          query += ` AND l.salesperson_id = $${params.length}`;
-        }
-        query += ` ORDER BY l.created_at DESC`;
-      } else {
-        // 'all' - Entire base
-        query = `SELECT l.id FROM leads l`;
-        if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
-          params.push(sourceSalespersonId);
-          query += ` WHERE l.salesperson_id = $${params.length}`;
-        }
-        query += ` ORDER BY l.created_at DESC`;
-      }
-
-      const elRes = await pgPool.query(query, params);
-      eligibleLeads = elRes.rows;
-    } else {
-      const allLeads = Array.from(memoryLeadsMap.values());
-      eligibleLeads = allLeads
-        .filter(l => {
-          if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
-            if ((l.salespersonId || 'seller-thomas') !== sourceSalespersonId) return false;
-          }
-          const calls = memoryCallLogsMap.get(l.id) || [];
-          if (targetScope === 'new_only') {
-            return (l.columnStatus || '').toLowerCase() === 'leads' && calls.length === 0;
-          } else if (targetScope === 'all_unattempted') {
-            return calls.length === 0;
-          } else if (targetScope === 'unconverted') {
-            return (l.columnStatus || '').toLowerCase() !== 'fechamento';
-          }
-          return true; // 'all'
-        })
-        .map(l => ({ id: l.id }));
-    }
-
-    if (eligibleLeads.length === 0) {
-      const scopeLabel = targetScope === 'new_only' 
-        ? 'leads novos não abordados (coluna "Leads" com 0 ligações)'
-        : targetScope === 'all_unattempted'
-          ? 'leads sem ligação registrada'
-          : 'leads no filtro selecionado';
-      return res.status(400).json({ error: `Não há ${scopeLabel} para distribuir.` });
-    }
-
-    // Calculate distribution quota proportions
-    const totalPercentage = allSellers.reduce((sum, s) => sum + (Number(s.distributionPercent) || 0), 0);
-    const totalLeadsCount = eligibleLeads.length;
-
-    // Determine target count for each seller
-    const allocations: { seller: Salesperson; targetCount: number; leadIds: string[] }[] = [];
-    let allocatedSoFar = 0;
-
-    for (let i = 0; i < allSellers.length; i++) {
-      const seller = allSellers[i];
-      const quotaPct = totalPercentage > 0 
-        ? ((Number(seller.distributionPercent) || 0) / totalPercentage) 
-        : (1 / allSellers.length);
-
-      let targetCount = 0;
-      if (i === allSellers.length - 1) {
-        // Last seller gets the remainder
-        targetCount = Math.max(0, totalLeadsCount - allocatedSoFar);
-      } else {
-        targetCount = Math.round(totalLeadsCount * quotaPct);
-        allocatedSoFar += targetCount;
-      }
-
-      allocations.push({
-        seller,
-        targetCount,
-        leadIds: []
-      });
-    }
-
-    // Distribute lead IDs
-    let cursor = 0;
-    for (const alloc of allocations) {
-      const slice = eligibleLeads.slice(cursor, cursor + alloc.targetCount);
-      alloc.leadIds = slice.map(l => l.id);
-      cursor += alloc.targetCount;
-    }
-
-    // Apply updates
-    const summary: Record<string, { count: number; percent: number }> = {};
-
-    if (usePostgres && pgPool) {
-      for (const alloc of allocations) {
-        if (alloc.leadIds.length > 0) {
-          await pgPool.query(
-            `UPDATE leads 
-             SET salesperson_id = $1, salesperson_name = $2, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ANY($3::text[])`,
-            [alloc.seller.id, alloc.seller.name, alloc.leadIds]
-          );
-        }
-        summary[alloc.seller.name] = {
-          count: alloc.leadIds.length,
-          percent: Number(alloc.seller.distributionPercent) || 0
-        };
-      }
-    } else {
-      for (const alloc of allocations) {
-        for (const id of alloc.leadIds) {
-          const lead = memoryLeadsMap.get(id);
-          if (lead) {
-            lead.salespersonId = alloc.seller.id;
-            lead.salespersonName = alloc.seller.name;
-            lead.updatedAt = new Date().toISOString();
-            memoryLeadsMap.set(id, lead);
-          }
-        }
-        summary[alloc.seller.name] = {
-          count: alloc.leadIds.length,
-          percent: Number(alloc.seller.distributionPercent) || 0
-        };
-      }
-    }
-
-    return res.json({
-      success: true,
-      totalDistributed: totalLeadsCount,
-      summary,
-      message: `${totalLeadsCount} leads foram redistribuídos conforme as porcentagens configuradas da equipe!`
-    });
-  } catch (error: any) {
-    console.error('Error distributing leads by quotas:', error);
-    res.status(500).json({ error: `Erro ao distribuir leads por porcentagem: ${error.message}` });
-  }
-});
-
-// 6.2 EXPORT UNCONTACTED LEADS NAMES ONLY AS JSON
-app.get('/api/export/uncontacted-names', async (req, res) => {
-  try {
-    let uncontactedNames: { nome: string }[] = [];
-
-    if (usePostgres && pgPool) {
-      const qRes = await pgPool.query(`
-        SELECT l.name as nome
-        FROM leads l
-        LEFT JOIN calls c ON l.id = c.lead_id
-        GROUP BY l.id, l.name, l.created_at
-        HAVING COUNT(c.id) = 0
-        ORDER BY l.created_at DESC
-      `);
-      uncontactedNames = qRes.rows.map(r => ({ nome: r.nome || 'Sem Nome' }));
-    } else {
-      const allLeads = Array.from(memoryLeadsMap.values());
-      uncontactedNames = allLeads
-        .filter(l => {
-          const calls = memoryCallLogsMap.get(l.id) || [];
-          return calls.length === 0;
-        })
-        .map(l => ({ nome: l.name || 'Sem Nome' }));
-    }
-
-    const download = req.query.download === 'true';
-    if (download) {
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename="leads_nao_abordados_nomes.json"');
-    }
-
-    return res.json(uncontactedNames);
-  } catch (error: any) {
-    console.error('Error exporting uncontacted names:', error);
-    res.status(500).json({ error: `Erro ao exportar nomes dos leads não abordados: ${error.message}` });
-  }
-});
-
-// Helper to generate a clean URL slug for Nyroh sites
-function slugify(text: string): string {
-  if (!text) return '';
-  return text
-    .toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove acentos
-    .replace(/&/g, '-e-')
-    .replace(/[^a-z0-9\s-]/g, '') // remove caracteres especiais
-    .trim()
-    .replace(/\s+/g, '-') // substitui espaços por hífens
-    .replace(/-+/g, '-'); // remove múltiplos hífens
-}
-
-// Helper to extract or generate the official Nyroh site URL
-function extractNyrohSiteUrl(data: any, name: string): string {
-  if (!data || typeof data !== 'object') {
-    const slug = slugify(name);
-    return slug ? `https://www.nyroh.com.br/#/site/${slug}` : '';
-  }
-
-  // 1. Procurar chaves diretas que contenham nyroh
-  const candidateKeys = [
-    'nyrohUrl', 'nyroh_url', 'siteNyroh', 'site_nyroh', 'nyrohSite', 'nyroh_site',
-    'publicUrl', 'public_url', 'siteUrl', 'site_url', 'site', 'website', 'url', 'previewUrl', 'link'
-  ];
-
-  for (const k of candidateKeys) {
-    const val = data[k];
-    if (typeof val === 'string' && (val.includes('nyroh.com.br') || val.includes('nyroh.com'))) {
-      let clean = val.trim();
-      if (!clean.startsWith('http://') && !clean.startsWith('https://')) clean = `https://${clean}`;
-      return clean;
-    }
-  }
-
-  // 2. Checar dithoSitesMetadata
-  if (data.dithoSitesMetadata && typeof data.dithoSitesMetadata === 'object') {
-    const dUrl = String(data.dithoSitesMetadata.publicUrl || data.dithoSitesMetadata.url || '').trim();
-    if (dUrl && (dUrl.includes('nyroh.com.br') || dUrl.includes('nyroh.com'))) {
-      return dUrl.startsWith('http') ? dUrl : `https://${dUrl}`;
-    }
-  }
-
-  // 3. Checar campos de slug
-  const slugKeys = ['slug', 'siteSlug', 'site_slug', 'slugName', 'slug_name', 'subdomain'];
-  for (const k of slugKeys) {
-    const val = data[k];
-    if (typeof val === 'string' && val.trim() && !val.includes('http') && !val.includes(' ') && !val.includes('/')) {
-      return `https://www.nyroh.com.br/#/site/${val.trim()}`;
-    }
-  }
-
-  // 4. Checar no JSON inteiro se existe URL da nyroh.com.br
-  try {
-    const jsonStr = JSON.stringify(data);
-    const match = jsonStr.match(/https?:\/\/[^"\s\\]*nyroh\.com\.br[^"\s\\]*/i);
-    if (match && match[0]) {
-      return match[0].replace(/\\/g, '');
-    }
-  } catch (e) {}
-
-  // 5. Se nenhuma chave explícita da Nyroh veio no JSON, gera automaticamente pelo nome do cliente!
-  const slug = slugify(name);
-  if (slug) {
-    return `https://www.nyroh.com.br/#/site/${slug}`;
-  }
-
-  return '';
-}
-
 // Helper function to process lead items (shared between zip upload and batch JSON API)
 async function processLeadItems(items: any[]) {
   let totalProcessed = 0;
@@ -1238,8 +770,13 @@ async function processLeadItems(items: any[]) {
       '(Sem telefone)'
     ).trim();
 
-    // Extrai ou constrói SEMPRE o site oficial da Nyroh
-    const publicUrl = extractNyrohSiteUrl(data, name);
+    let publicUrl = '';
+    if (data.dithoSitesMetadata && typeof data.dithoSitesMetadata === 'object') {
+      publicUrl = String(data.dithoSitesMetadata.publicUrl || data.dithoSitesMetadata.url || '').trim();
+    }
+    if (!publicUrl) {
+      publicUrl = String(data.publicUrl || data.public_url || data.website || data.url || data.siteUrl || data.site || '').trim();
+    }
 
     const salespersonId = String(data.salespersonId || data.salesperson_id || 'seller-thomas').trim();
     const salespersonName = String(data.salespersonName || data.salesperson_name || 'Thomas').trim();

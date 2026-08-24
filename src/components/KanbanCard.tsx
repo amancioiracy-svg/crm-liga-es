@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
 import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronRight, Check, CalendarClock, AlertTriangle, Clock, PhoneCall } from 'lucide-react';
-import { getWhatsAppUrl, getQrTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage, getNyrohSiteUrl } from '../lib/phone';
+import { getWhatsAppUrl, getQrTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 
@@ -25,7 +25,6 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
   const [copiedPhone, setCopiedPhone] = useState(false);
 
   const currentColumnIndex = PIPELINE_COLUMNS.indexOf(lead.columnStatus);
-  const nyrohUrl = getNyrohSiteUrl(lead);
 
   const getTagStyle = (tagName: string) => {
     const found = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
@@ -41,16 +40,16 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
   };
   const leadTagsList = getTagsList(lead.lastCallTag);
 
-  // 1. Copiar URL do Site da Nyroh
+  // 1. Copiar URL (dithoSitesMetadata.publicUrl)
   const handleCopyUrl = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!nyrohUrl) {
+    if (!lead.publicUrl) {
       onShowToast('Este lead não possui URL cadastrada.');
       return;
     }
-    navigator.clipboard.writeText(nyrohUrl);
+    navigator.clipboard.writeText(lead.publicUrl);
     setCopiedUrl(true);
-    onShowToast(`URL copiada: ${nyrohUrl}`);
+    onShowToast('URL copiada para a área de transferência!');
     setTimeout(() => setCopiedUrl(false), 2000);
   };
 
@@ -69,7 +68,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
     const template = getStoredWhatsAppTemplate();
     const msgText = formatWhatsAppMessage(template, {
       name: lead.name,
-      site: nyrohUrl,
+      site: lead.publicUrl || '',
       salesperson: lead.salespersonName || 'Thomas'
     });
     const waUrl = getWhatsAppUrl(lead.phoneNumber, msgText);
@@ -195,20 +194,13 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           </div>
         )}
 
-        {/* Tag do site da Nyroh */}
-        {nyrohUrl && (
+        {/* Tag do site se houver */}
+        {lead.publicUrl && (
           <div className="mb-3">
-            <a
-              href={nyrohUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 bg-blue-50/70 hover:bg-blue-100/70 px-1.5 py-0.5 rounded border border-blue-200/60 max-w-full truncate transition-colors"
-              title="Abrir site da Nyroh"
-            >
-              <ExternalLink className="w-2.5 h-2.5 text-blue-500 shrink-0" />
-              <span className="truncate">{nyrohUrl.replace(/^https?:\/\//, '')}</span>
-            </a>
+            <span className="inline-flex items-center gap-1 text-[10px] text-neutral-500 bg-neutral-50 px-1.5 py-0.5 rounded border border-neutral-200/60 max-w-full truncate">
+              <ExternalLink className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
+              <span className="truncate">{lead.publicUrl.replace(/^https?:\/\//, '')}</span>
+            </span>
           </div>
         )}
 

@@ -1,20 +1,11 @@
 import React, { useState } from 'react';
-import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight, LogOut, Shield, Download, FileJson } from 'lucide-react';
+import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight } from 'lucide-react';
 import { Salesperson } from '../types';
 import { getSalespersonSlug } from '../lib/salesperson';
 
-export interface AuthUser {
-  role: 'admin' | 'salesperson';
-  salespersonId?: string;
-  salespersonName?: string;
-  phone?: string;
-}
-
-export type MainAppTab = 'kanban' | 'table' | 'dashboard' | 'team';
-
 interface SidebarProps {
-  activeTab: MainAppTab;
-  setActiveTab: (tab: MainAppTab) => void;
+  activeTab: 'kanban' | 'table' | 'dashboard';
+  setActiveTab: (tab: 'kanban' | 'table' | 'dashboard') => void;
   onOpenZipModal: () => void;
   onOpenTagsModal: () => void;
   onOpenSalesTeamModal: () => void;
@@ -24,8 +15,6 @@ interface SidebarProps {
   salespeopleCount?: number;
   activeSalesperson?: Salesperson;
   onClearSalespersonFilter?: () => void;
-  currentUser?: AuthUser | null;
-  onLogout?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -39,43 +28,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   totalLeads,
   salespeopleCount = 1,
   activeSalesperson,
-  onClearSalespersonFilter,
-  currentUser,
-  onLogout
+  onClearSalespersonFilter
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [downloadingJson, setDownloadingJson] = useState(false);
-  const isAdmin = currentUser?.role === 'admin';
-
-  const handleDownloadUncontactedNamesJson = async () => {
-    try {
-      setDownloadingJson(true);
-      const res = await fetch('/api/export/uncontacted-names?download=true');
-      if (!res.ok) throw new Error('Falha ao exportar JSON');
-      const data = await res.json();
-      
-      const jsonString = JSON.stringify(data, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `leads_nao_abordados_nomes_${new Date().toISOString().slice(0, 10)}.json`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (e: any) {
-      console.error(e);
-      alert('Erro ao baixar o arquivo JSON de nomes: ' + e.message);
-    } finally {
-      setDownloadingJson(false);
-    }
-  };
 
   return (
     <>
       {/* DESKTOP SIDEBAR - Only visible on xl screens (1280px+) */}
-      <aside className="hidden xl:flex w-56 bg-white border-r border-neutral-200 flex-col justify-between h-screen shrink-0 sticky top-0 select-none">
+      <aside className="hidden xl:flex w-52 bg-white border-r border-neutral-200 flex-col justify-between h-screen shrink-0 sticky top-0 select-none">
         {/* Top Header */}
         <div>
           <div className="p-3 border-b border-neutral-100 flex items-center justify-between gap-2">
@@ -85,53 +45,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               <div className="min-w-0">
                 <h1 className="text-xs font-bold text-neutral-900 leading-tight truncate">
-                  {currentUser?.role === 'salesperson' ? currentUser.salespersonName : 'Nyroh CRM Call'}
+                  {activeSalesperson ? `CRM • ${activeSalesperson.name}` : 'CRM de Leads'}
                 </h1>
                 <p className="text-[10px] text-neutral-400 truncate">
-                  {currentUser?.role === 'salesperson' ? 'Painel da Vendedora' : 'Gestão & Discagem'}
+                  {activeSalesperson ? `/v/${getSalespersonSlug(activeSalesperson)}` : 'Acompanhamento & Ligações'}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* User Badge & Logout in Sidebar */}
-          <div className="mx-2.5 mt-2.5 p-2 rounded-xl border border-neutral-200 bg-neutral-50/80">
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600 flex items-center gap-1">
-                {isAdmin ? (
-                  <>
-                    <Shield className="w-3 h-3 text-emerald-600" />
-                    <span>Gestor Master</span>
-                  </>
-                ) : (
-                  <>
-                    <UserCheck className="w-3 h-3 text-blue-600" />
-                    <span>Vendedora</span>
-                  </>
-                )}
-              </span>
-              {onLogout && (
-                <button
-                  onClick={onLogout}
-                  className="text-[10px] text-rose-600 hover:text-rose-800 font-bold flex items-center gap-0.5"
-                  title="Sair / Desconectar"
-                >
-                  <LogOut className="w-3 h-3" />
-                  <span>Sair</span>
-                </button>
-              )}
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-neutral-900 truncate">
-                {currentUser?.salespersonName || 'Thomas'}
-              </span>
-              {currentUser?.phone && (
-                <span className="text-[10px] font-mono text-emerald-700 font-semibold truncate">
-                  {currentUser.phone}
+          {activeSalesperson && (
+            <div className="mx-2.5 mt-2.5 p-2 rounded-xl border border-blue-200 bg-blue-50/80">
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
+                  Instância do Vendedor
                 </span>
-              )}
+                <span 
+                  className="w-2.5 h-2.5 rounded-full" 
+                  style={{ backgroundColor: activeSalesperson.color || '#0284c7' }} 
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-neutral-900 truncate">
+                  {activeSalesperson.name}
+                </span>
+                {onClearSalespersonFilter && (
+                  <button
+                    onClick={onClearSalespersonFilter}
+                    className="text-[10px] text-blue-700 hover:text-blue-900 underline font-semibold"
+                  >
+                    Ver Todos
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Navigation Menu */}
           <div className="p-2.5 space-y-1">
@@ -183,34 +131,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="truncate">Dashboard Analítico</span>
               </div>
             </button>
-
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab('team')}
-                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  activeTab === 'team'
-                    ? 'bg-blue-50 text-blue-900 font-bold border border-blue-200'
-                    : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Users className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span className="truncate">Equipe & Vendedoras</span>
-                </div>
-                <span className="text-[10px] font-mono bg-blue-100 text-blue-800 font-bold px-1.5 py-0.5 rounded-full shrink-0 ml-1">
-                  {salespeopleCount}
-                </span>
-              </button>
-            )}
           </div>
 
           {/* Tags & Actions Section */}
           <div className="p-2.5 space-y-1.5 border-t border-neutral-100 mt-1">
             <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-2 py-0.5 block">
-              Ferramentas
+              Ações & Equipe
             </span>
 
-            {/* WhatsApp template can be used by both */}
+            <button
+              onClick={onOpenSalesTeamModal}
+              className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+              title="Gerenciar vendedores e distribuir leads novos"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="truncate">Equipe & Divisão</span>
+              </div>
+              <span className="text-[10px] bg-blue-200 text-blue-900 px-1.5 py-0.2 rounded-full font-bold">
+                {salespeopleCount}
+              </span>
+            </button>
+
             <button
               onClick={onOpenWhatsAppSettings}
               className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
@@ -220,71 +162,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="truncate">Mensagem WhatsApp</span>
             </button>
 
-            {/* Admin only features */}
-            {isAdmin && (
-              <>
-                <button
-                  onClick={onOpenSalesTeamModal}
-                  className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
-                  title="Gerenciar vendedores e distribuir leads novos"
-                >
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span className="truncate">Equipe & Divisão</span>
-                  </div>
-                  <span className="text-[10px] bg-blue-200 text-blue-900 px-1.5 py-0.2 rounded-full font-bold">
-                    {salespeopleCount}
-                  </span>
-                </button>
+            <button
+              onClick={onOpenTagsModal}
+              className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-800 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors border border-neutral-200"
+              title="Gerenciar Etiquetas de Ligações Customizadas"
+            >
+              <Tag className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span className="truncate">Gerenciar Tags</span>
+            </button>
 
-                <button
-                  onClick={onOpenTagsModal}
-                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-800 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors border border-neutral-200"
-                  title="Gerenciar Etiquetas de Ligações Customizadas"
-                >
-                  <Tag className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span className="truncate">Gerenciar Tags</span>
-                </button>
+            <button
+              onClick={onOpenZipModal}
+              className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors shadow-2xs"
+            >
+              <FileArchive className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+              <span className="truncate">Upload ZIP</span>
+            </button>
 
-                <button
-                  onClick={onOpenZipModal}
-                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors shadow-2xs"
-                >
-                  <FileArchive className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                  <span className="truncate">Upload ZIP</span>
-                </button>
-
-                <button
-                  onClick={handleDownloadUncontactedNamesJson}
-                  disabled={downloadingJson}
-                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-300 shadow-2xs"
-                  title="Baixa um arquivo JSON contendo apenas o nome de todos os leads que ainda não foram ligados no sistema todo"
-                >
-                  <Download className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                  <span className="truncate">{downloadingJson ? 'Baixando JSON...' : 'Baixar JSON (Não Ligados)'}</span>
-                </button>
-
-                <button
-                  onClick={onSeedSamples}
-                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors border border-neutral-200"
-                  title="Adiciona 5 leads de demonstração para testes rápidos"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="truncate">Leads de Exemplo</span>
-                </button>
-              </>
-            )}
+            <button
+              onClick={onSeedSamples}
+              className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors border border-neutral-200"
+              title="Adiciona 5 leads de demonstração para testes rápidos"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="truncate">Leads de Exemplo</span>
+            </button>
           </div>
         </div>
 
         {/* Footer Info */}
         <div className="p-3 border-t border-neutral-100 text-[10px] text-neutral-400 space-y-0.5">
           <div className="flex items-center justify-between">
-            <span className="truncate">{isAdmin ? 'Acesso Master' : 'Acesso Vendedora'}</span>
+            <span className="truncate">Railway Ready</span>
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse shrink-0"></span>
           </div>
           <p className="text-[10px] text-neutral-400 truncate">
-            {currentUser?.salespersonName || 'Sistema Nyroh'}
+            PostgreSQL Active
           </p>
         </div>
       </aside>
@@ -297,10 +210,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="min-w-0">
             <h1 className="text-xs font-bold text-neutral-900 leading-tight truncate">
-              {currentUser?.salespersonName || 'CRM Leads'}
+              {activeSalesperson ? activeSalesperson.name : 'CRM Leads'}
             </h1>
             <p className="text-[10px] text-neutral-500 font-mono truncate">
-              {totalLeads} lead(s) {isAdmin ? '• Master' : '• Vendedora'}
+              {totalLeads} lead(s) {activeSalesperson && `• /v/${getSalespersonSlug(activeSalesperson)}`}
             </p>
           </div>
         </div>
@@ -365,8 +278,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     CRM
                   </div>
                   <div>
-                    <h2 className="text-xs font-bold text-neutral-900">{currentUser?.salespersonName || 'Menu'}</h2>
-                    <p className="text-[10px] text-neutral-400">{isAdmin ? 'Gestor Master' : 'Vendedora'}</p>
+                    <h2 className="text-xs font-bold text-neutral-900">Menu do Sistema</h2>
+                    <p className="text-[10px] text-neutral-400">Opções & Ferramentas</p>
                   </div>
                 </div>
                 <button
@@ -428,32 +341,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span>Dashboard Analítico</span>
                   </div>
                 </button>
-
-                {isAdmin && (
-                  <button
-                    onClick={() => {
-                      setActiveTab('team');
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-medium ${
-                      activeTab === 'team' ? 'bg-blue-50 text-blue-900 font-bold border border-blue-200' : 'text-neutral-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-blue-600" />
-                      <span>Equipe & Vendedoras</span>
-                    </div>
-                    <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full font-bold">
-                      {salespeopleCount}
-                    </span>
-                  </button>
-                )}
               </div>
 
               <div className="border-t border-neutral-100 my-4 pt-3 space-y-2">
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block px-2">
-                  Ferramentas
+                  Equipe & Ferramentas
                 </span>
+
+                <button
+                  onClick={() => {
+                    onOpenSalesTeamModal();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-semibold text-blue-900 bg-blue-50 border border-blue-200"
+                >
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-blue-600" />
+                    <span>Equipe & Divisão de Leads</span>
+                  </div>
+                  <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full font-bold">
+                    {salespeopleCount}
+                  </span>
+                </button>
 
                 <button
                   onClick={() => {
@@ -466,87 +375,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>Configurar Mensagem WhatsApp</span>
                 </button>
 
-                {isAdmin && (
-                  <>
-                    <button
-                      onClick={() => {
-                        onOpenSalesTeamModal();
-                        setMobileMenuOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-semibold text-blue-900 bg-blue-50 border border-blue-200"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-blue-600" />
-                        <span>Equipe & Divisão de Leads</span>
-                      </div>
-                      <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full font-bold">
-                        {salespeopleCount}
-                      </span>
-                    </button>
+                <button
+                  onClick={() => {
+                    onOpenTagsModal();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-neutral-800 bg-neutral-100 border border-neutral-200"
+                >
+                  <Tag className="w-4 h-4 text-blue-600" />
+                  <span>Gerenciar Etiquetas</span>
+                </button>
 
-                    <button
-                      onClick={() => {
-                        onOpenTagsModal();
-                        setMobileMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-neutral-800 bg-neutral-100 border border-neutral-200"
-                    >
-                      <Tag className="w-4 h-4 text-blue-600" />
-                      <span>Gerenciar Etiquetas</span>
-                    </button>
+                <button
+                  onClick={() => {
+                    onOpenZipModal();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-white bg-neutral-900 shadow-2xs"
+                >
+                  <FileArchive className="w-4 h-4 text-neutral-300" />
+                  <span>Upload de Arquivos ZIP</span>
+                </button>
 
-                    <button
-                      onClick={() => {
-                        onOpenZipModal();
-                        setMobileMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-white bg-neutral-900 shadow-2xs"
-                    >
-                      <FileArchive className="w-4 h-4 text-neutral-300" />
-                      <span>Upload de Arquivos ZIP</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        handleDownloadUncontactedNamesJson();
-                        setMobileMenuOpen(false);
-                      }}
-                      disabled={downloadingJson}
-                      className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-amber-900 bg-amber-50 border border-amber-300 shadow-2xs"
-                    >
-                      <Download className="w-4 h-4 text-amber-700" />
-                      <span>{downloadingJson ? 'Baixando JSON...' : 'Baixar JSON (Nomes Não Ligados)'}</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        onSeedSamples();
-                        setMobileMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-medium text-neutral-700 bg-neutral-100 border border-neutral-200"
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-500" />
-                      <span>Gerar Leads de Exemplo</span>
-                    </button>
-                  </>
-                )}
+                <button
+                  onClick={() => {
+                    onSeedSamples();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-medium text-neutral-700 bg-neutral-100 border border-neutral-200"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>Gerar Leads de Exemplo</span>
+                </button>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
-              <span className="text-[11px] text-neutral-500">{currentUser?.salespersonName}</span>
-              {onLogout && (
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onLogout();
-                  }}
-                  className="px-2.5 py-1 bg-rose-50 text-rose-700 text-xs font-bold rounded-lg border border-rose-200 flex items-center gap-1"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Sair</span>
-                </button>
-              )}
+            <div className="pt-3 border-t border-neutral-100 text-[10px] text-neutral-400 flex items-center justify-between">
+              <span>Mobile Mode Active</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>
           </div>
         </div>

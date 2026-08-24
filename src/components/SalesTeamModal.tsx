@@ -46,7 +46,6 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [distributionPercent, setDistributionPercent] = useState<number>(50);
   const [selectedPaletteIndex, setSelectedPaletteIndex] = useState(1); // default Emerald for 2nd seller
   const [savingSeller, setSavingSeller] = useState(false);
 
@@ -57,20 +56,6 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
   const [distPercentage, setDistPercentage] = useState<number>(50);
   const [distCount, setDistCount] = useState<number>(10);
   const [distributing, setDistributing] = useState(false);
-  const [autoDistributing, setAutoDistributing] = useState(false);
-
-  // Quotas state
-  const [quotasState, setQuotasState] = useState<Record<string, number>>({});
-  const [savingQuotas, setSavingQuotas] = useState(false);
-
-  // Initialize quotas from salespeople
-  React.useEffect(() => {
-    const q: Record<string, number> = {};
-    salespeople.forEach((s) => {
-      q[s.id] = s.distributionPercent || (s.isDefault ? 50 : 0);
-    });
-    setQuotasState(q);
-  }, [salespeople]);
 
   if (!isOpen) return null;
 
@@ -112,7 +97,6 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim(),
-          distributionPercent: Number(distributionPercent) || 0,
           color: palette.color,
           bgColor: palette.bgColor
         })
@@ -124,11 +108,10 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
       }
 
       const created = await res.json();
-      onShowToast(`Vendedor(a) "${created.name}" cadastrado(a) com sucesso com ${created.distributionPercent || 0}% de quota!`);
+      onShowToast(`Vendedor(a) "${created.name}" cadastrado(a) com sucesso!`);
       setName('');
       setEmail('');
       setPhone('');
-      setDistributionPercent(50);
       await onRefreshSalespeople();
       // Auto-select for distribution
       setDistTargetId(created.id);
@@ -137,55 +120,6 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
       onShowToast(err.message || 'Erro ao salvar vendedor.');
     } finally {
       setSavingSeller(false);
-    }
-  };
-
-  const handleSaveQuotas = async () => {
-    setSavingQuotas(true);
-    try {
-      const res = await fetch('/api/salespeople/quotas/batch', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quotas: quotasState })
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Erro ao salvar porcentagens.');
-      }
-      onShowToast('✅ Porcentagens de distribuição salvas com sucesso!');
-      await onRefreshSalespeople();
-    } catch (err: any) {
-      onShowToast(err.message || 'Erro ao salvar quotas.');
-    } finally {
-      setSavingQuotas(false);
-    }
-  };
-
-  const handleAutoDistributeByQuotas = async () => {
-    if (totalEligibleCount === 0) {
-      onShowToast('Não há leads novos disponíveis para distribuição.');
-      return;
-    }
-
-    setAutoDistributing(true);
-    try {
-      const res = await fetch('/api/leads/distribute-by-quotas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Erro ao distribuir por porcentagem.');
-      }
-
-      onShowToast(`🎉 ${data.message || 'Leads distribuídos com sucesso!'}`);
-      await onRefreshLeads();
-      await onRefreshSalespeople();
-      onClose();
-    } catch (err: any) {
-      onShowToast(err.message || 'Erro ao processar divisão automática.');
-    } finally {
-      setAutoDistributing(false);
     }
   };
 
@@ -325,14 +259,9 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
             <>
               {/* List of Salespeople */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-neutral-700 uppercase tracking-wider block">
-                    Vendedores Cadastrados ({salespeople.length})
-                  </span>
-                  <span className="text-[11px] text-neutral-500">
-                    O telefone cadastrado é usado para o login da vendedora
-                  </span>
-                </div>
+                <span className="text-xs font-bold text-neutral-700 uppercase tracking-wider block">
+                  Vendedores Cadastrados
+                </span>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {salespeople.map((seller) => {
@@ -349,13 +278,13 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div 
-                              className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-xs"
+                              className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-xs"
                               style={{ backgroundColor: seller.bgColor, color: seller.color }}
                             >
                               {seller.name.charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
+                              <div className="flex items-center gap-1.5">
                                 <h3 className="text-xs font-bold text-neutral-900 truncate">
                                   {seller.name}
                                 </h3>
@@ -364,20 +293,10 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                                     Principal
                                   </span>
                                 )}
-                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full">
-                                  {seller.distributionPercent || (seller.isDefault ? 50 : 0)}% dos leads
-                                </span>
                               </div>
-                              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-neutral-500">
-                                {seller.phone ? (
-                                  <span className="font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1">
-                                    📱 {seller.phone}
-                                  </span>
-                                ) : (
-                                  <span className="text-amber-600 text-[10px]">Sem telefone</span>
-                                )}
-                                {seller.email && <span className="truncate">{seller.email}</span>}
-                              </div>
+                              <p className="text-[11px] text-neutral-500 truncate">
+                                {seller.email || seller.phone || 'Vendedor Ativo'}
+                              </p>
                             </div>
                           </div>
 
@@ -426,7 +345,7 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                                 e.stopPropagation();
                                 const url = getSalespersonAppUrl(seller);
                                 navigator.clipboard.writeText(url);
-                                onShowToast(`Link de acesso de ${seller.name} copiado!`);
+                                onShowToast(`Link da rota de ${seller.name} copiado!`);
                               }}
                               className="px-2 py-1 rounded bg-white hover:bg-neutral-100 text-neutral-700 text-[10px] font-semibold border border-neutral-200 shadow-2xs flex items-center gap-1 transition-colors"
                               title="Copiar link exclusivo do vendedor"
@@ -441,7 +360,7 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   const url = getSalespersonAppUrl(seller);
-                                  const msg = `Olá ${seller.name}, aqui está o seu link de acesso ao Nyroh CRM Call: ${url}`;
+                                  const msg = `Olá ${seller.name}, aqui está o seu link exclusivo do CRM: ${url}`;
                                   const waUrl = getWhatsAppUrl(seller.phone!, msg);
                                   window.open(waUrl, '_blank');
                                 }}
@@ -476,49 +395,6 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                 </div>
               </div>
 
-              {/* Adjust Quotas % Section */}
-              <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Percent className="w-4 h-4 text-emerald-600" />
-                    <h3 className="text-xs font-bold text-neutral-900">
-                      Definir Porcentagem (%) de Novos Leads por Vendedor
-                    </h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSaveQuotas}
-                    disabled={savingQuotas}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-2xs flex items-center gap-1.5 transition"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>{savingQuotas ? 'Salvando...' : 'Salvar Porcentagens'}</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {salespeople.map((s) => (
-                    <div key={s.id} className="p-3 bg-white rounded-lg border border-neutral-200 shadow-2xs space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-neutral-800">
-                        <span className="truncate">{s.name}</span>
-                        <span className="text-emerald-700 font-mono">
-                          {quotasState[s.id] ?? (s.distributionPercent || 0)}%
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="5"
-                        value={quotasState[s.id] ?? (s.distributionPercent || 0)}
-                        onChange={(e) => setQuotasState({ ...quotasState, [s.id]: Number(e.target.value) })}
-                        className="w-full accent-emerald-600 cursor-pointer h-1.5 bg-neutral-200 rounded-lg"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* Add New Salesperson Form */}
               <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/60 space-y-3.5">
                 <div className="flex items-center gap-2">
@@ -529,7 +405,7 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                 </div>
 
                 <form onSubmit={handleCreateSalesperson} className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
                       <label className="block text-[11px] font-semibold text-neutral-700 mb-1">
                         Nome Completo *
@@ -546,38 +422,6 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
 
                     <div>
                       <label className="block text-[11px] font-semibold text-neutral-700 mb-1">
-                        WhatsApp / Login Vendedora *
-                      </label>
-                      <input
-                        type="tel"
-                        placeholder="(31) 99150-3721"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        required
-                        className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-neutral-300 focus:outline-none focus:border-blue-500 bg-white font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">
-                        % Quota de Leads
-                      </label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          placeholder="50"
-                          value={distributionPercent}
-                          onChange={(e) => setDistributionPercent(Number(e.target.value))}
-                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-neutral-300 focus:outline-none focus:border-blue-500 bg-white font-bold"
-                        />
-                        <span className="text-xs text-neutral-500 font-bold">%</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">
                         E-mail (opcional)
                       </label>
                       <input
@@ -585,6 +429,19 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                         placeholder="mariana@empresa.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-neutral-300 focus:outline-none focus:border-blue-500 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">
+                        Telefone / WhatsApp (opcional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="(31) 99999-9999"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
                         className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-neutral-300 focus:outline-none focus:border-blue-500 bg-white"
                       />
                     </div>
@@ -635,47 +492,7 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
           ) : (
             <>
               {/* LEAD DISTRIBUTION TAB */}
-              <div className="space-y-5">
-                {/* 1-Click Team % Distribution Card */}
-                <div className="p-4 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                        <Sparkles className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wider">
-                          Divisão Automática por Porcentagem (%) da Equipe
-                        </h4>
-                        <p className="text-[11px] text-emerald-800">
-                          Distribui instantaneamente todos os {totalEligibleCount} novos leads conforme a quota (%) de cada vendedor.
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleAutoDistributeByQuotas}
-                      disabled={autoDistributing || totalEligibleCount === 0}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition shrink-0"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>{autoDistributing ? 'Distribuindo...' : '⚡ Dividir Automaticamente'}</span>
-                    </button>
-                  </div>
-
-                  {/* Visual quotas distribution badge preview */}
-                  <div className="flex flex-wrap gap-2 pt-1 border-t border-emerald-200/60">
-                    {salespeople.map((s) => (
-                      <div key={s.id} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-white/80 border border-emerald-200 text-emerald-900 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
-                        <span>{s.name}:</span>
-                        <span className="font-bold text-emerald-700">{s.distributionPercent || (s.isDefault ? 50 : 0)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
+              <div className="space-y-4">
                 {/* Rule Callout */}
                 <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 flex items-start gap-3">
                   <Shield className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
@@ -726,7 +543,7 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                     >
                       {salespeople.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.name} ({s.distributionPercent || (s.isDefault ? 50 : 0)}% quota)
+                          {s.name} {s.isDefault ? '(Thomas - Principal)' : ''}
                         </option>
                       ))}
                     </select>
@@ -758,7 +575,7 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
                 <div className="p-4 rounded-xl border border-neutral-200 bg-white space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-neutral-900">
-                      3. Escolha como quer transferir manualmente:
+                      3. Escolha como quer dividir:
                     </span>
 
                     <div className="flex items-center p-0.5 bg-neutral-100 rounded-lg border border-neutral-200">
