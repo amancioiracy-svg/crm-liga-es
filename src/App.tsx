@@ -314,6 +314,7 @@ export default function App() {
         <LoginScreen
           onLoginSuccess={handleLoginSuccess}
           salespeople={salespeople}
+          onShowToast={showToast}
         />
         <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
       </>

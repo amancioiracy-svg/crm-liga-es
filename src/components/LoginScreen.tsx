@@ -5,7 +5,7 @@ import { AuthUser, Salesperson } from '../types';
 interface LoginScreenProps {
   salespeople: Salesperson[];
   onLoginSuccess: (user: AuthUser) => void;
-  onShowToast: (msg: string) => void;
+  onShowToast?: (msg: string) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
@@ -61,7 +61,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         throw new Error(data.error || 'Vendedora não encontrada.');
       }
 
-      onShowToast(`👋 Bem-vinda de volta, ${data.user.salespersonName}!`);
+      if (onShowToast) onShowToast(`👋 Bem-vinda de volta, ${data.user.salespersonName}!`);
       onLoginSuccess(data.user);
     } catch (err: any) {
       setErrorMsg(err.message || 'Erro ao entrar. Verifique o número digitado.');
@@ -87,7 +87,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         throw new Error(data.error || 'Erro no login do Gestor.');
       }
 
-      onShowToast('👑 Acesso Gestor autenticado com sucesso!');
+      if (onShowToast) onShowToast('👑 Acesso Gestor autenticado com sucesso!');
       onLoginSuccess(data.user);
     } catch (err: any) {
       setErrorMsg(err.message || 'Erro no login.');
