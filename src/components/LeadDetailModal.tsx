@@ -5,7 +5,7 @@ import {
   QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall, PhoneOff,
   CalendarClock, AlertTriangle, Bell, User, Sparkles, ChevronRight, Zap, History
 } from 'lucide-react';
-import { getWhatsAppUrl, getDialerTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
+import { getWhatsAppUrl, getDialerTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage, getNyrohSiteUrl } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 
@@ -446,9 +446,10 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 onClick={() => {
                   handleStartCall(false);
                   const template = getStoredWhatsAppTemplate();
+                  const siteUrl = getNyrohSiteUrl(lead);
                   const msgText = formatWhatsAppMessage(template, {
                     name: lead.name,
-                    site: lead.publicUrl || '',
+                    site: siteUrl,
                     salesperson: lead.salespersonName || 'Thomas'
                   });
                   const wa = getWhatsAppUrl(lead.phoneNumber, msgText);
@@ -460,17 +461,17 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 <span>WhatsApp</span>
               </button>
 
-              {/* Site Link */}
-              {lead.publicUrl && (
+              {/* Site Link Nyroh */}
+              {getNyrohSiteUrl(lead) && (
                 <a
-                  href={lead.publicUrl}
+                  href={getNyrohSiteUrl(lead)}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs border border-blue-200 transition-colors shrink-0 touch-manipulation"
-                  title="Abrir site da empresa"
+                  title="Abrir site da Nyroh"
                 >
                   <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
-                  <span className="hidden xs:inline">Site</span>
+                  <span className="hidden xs:inline">Site Nyroh</span>
                 </a>
               )}
 

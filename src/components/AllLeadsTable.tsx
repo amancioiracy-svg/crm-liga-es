@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
 import { Search, Phone, ExternalLink, QrCode, Copy, Trash2, Eye, MessageCircle, Check, CalendarClock, AlertTriangle, Clock, FileCode } from 'lucide-react';
-import { getWhatsAppUrl, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
+import { getWhatsAppUrl, getStoredWhatsAppTemplate, formatWhatsAppMessage, getNyrohSiteUrl } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 
@@ -148,6 +148,7 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
             ) : (
               filteredLeads.map((lead) => {
                 const fInfo = getFollowUpInfo(lead.nextFollowUpAt);
+                const nyrohUrl = getNyrohSiteUrl(lead);
                 return (
                   <tr key={lead.id} className="hover:bg-neutral-50/80 transition-colors">
                     <td className="py-3 px-3 font-semibold text-neutral-900">
@@ -176,20 +177,21 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
                     </td>
 
                     <td className="py-3 px-3">
-                      {lead.publicUrl ? (
+                      {nyrohUrl ? (
                         <div className="flex items-center gap-1.5">
                           <a
-                            href={lead.publicUrl}
+                            href={nyrohUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-blue-600 hover:underline max-w-[180px] truncate block"
+                            className="text-blue-600 hover:underline max-w-[180px] truncate block text-[11px]"
+                            title="Abrir site da Nyroh"
                           >
-                            {lead.publicUrl.replace(/^https?:\/\//, '')}
+                            {nyrohUrl.replace(/^https?:\/\//, '')}
                           </a>
                           <button
-                            onClick={() => handleCopy(lead.publicUrl!, 'URL')}
+                            onClick={() => handleCopy(nyrohUrl, 'URL Nyroh')}
                             className="p-1 text-neutral-400 hover:text-neutral-700"
-                            title="Copiar URL"
+                            title="Copiar URL Nyroh"
                           >
                             <Copy className="w-3 h-3" />
                           </button>
@@ -273,7 +275,7 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
                           const template = getStoredWhatsAppTemplate();
                           const msgText = formatWhatsAppMessage(template, {
                             name: lead.name,
-                            site: lead.publicUrl || '',
+                            site: nyrohUrl,
                             salesperson: lead.salespersonName || 'Thomas'
                           });
                           window.open(getWhatsAppUrl(lead.phoneNumber, msgText), 'whatsapp');

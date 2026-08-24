@@ -129,7 +129,7 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
     : Math.min(distCount, totalEligibleCount);
 
   // Total Quota Sum
-  const totalQuotaSum = Object.values(quotasState).reduce((acc, v) => acc + (Number(v) || 0), 0);
+  const totalQuotaSum = Object.values(quotasState).reduce((acc: number, v: number) => acc + (Number(v) || 0), 0);
 
   // Handlers
   const handleCreateSalesperson = async (e: React.FormEvent) => {
@@ -790,7 +790,7 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {salespeople.map((s) => {
-                    const pct = quotasState[s.id] ?? (s.distributionPercent || 0);
+                    const pct = Number(quotasState[s.id] ?? s.distributionPercent ?? 0);
                     const count = totalQuotaSum > 0 ? Math.round((autoScopeCount * pct) / totalQuotaSum) : 0;
                     return (
                       <div key={s.id} className="bg-neutral-800/80 p-2.5 rounded-lg border border-neutral-700/60 flex flex-col justify-between">
@@ -839,7 +839,7 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
                   </span>
                   <div className="space-y-1.5 text-xs">
                     {salespeople.map((s) => {
-                      const pct = quotasState[s.id] ?? (s.distributionPercent || 0);
+                      const pct = Number(quotasState[s.id] ?? s.distributionPercent ?? 0);
                       const count = totalQuotaSum > 0 ? Math.round((autoScopeCount * pct) / totalQuotaSum) : 0;
                       return (
                         <div key={s.id} className="flex items-center justify-between">
@@ -914,7 +914,7 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {salespeople.map((s) => {
-                const currentPercent = quotasState[s.id] ?? (s.distributionPercent || 0);
+                const currentPercent = Number(quotasState[s.id] ?? s.distributionPercent ?? 0);
                 const estimatedLeads = totalQuotaSum > 0 ? Math.round((autoScopeCount * currentPercent) / totalQuotaSum) : 0;
 
                 return (

@@ -169,6 +169,24 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           WHERE salesperson_id IS NULL OR salesperson_id = '';
         `);
 
+        // Backfill / Normalize all existing lead URLs to official Nyroh site URLs
+        const leadsToFix = await client.query(`
+          SELECT id, name, public_url FROM leads 
+          WHERE public_url IS NULL 
+             OR public_url = '' 
+             OR public_url LIKE '%maps.google.com%' 
+             OR public_url LIKE '%google.com/maps%'
+             OR public_url LIKE '%goo.gl%'
+        `);
+
+        for (const r of leadsToFix.rows) {
+          const nyrohLink = `https://www.nyroh.com.br/#/site/${slugify(r.name)}`;
+          await client.query(`UPDATE leads SET public_url = $1 WHERE id = $2`, [nyrohLink, r.id]);
+        }
+        if (leadsToFix.rows.length > 0) {
+          console.log(`✅ ${leadsToFix.rows.length} URLs de leads atualizadas para o formato Nyroh (https://www.nyroh.com.br/#/site/...)`);
+        }
+
         // Seed default tags if table is empty
         const tagCountRes = await client.query(`SELECT COUNT(*)::int AS count FROM custom_tags`);
         if (tagCountRes.rows[0].count === 0) {
@@ -1105,6 +1123,78 @@ app.get('/api/export/uncontacted-names', async (req, res) => {
   }
 });
 
+// Helper to generate a clean URL slug for Nyroh sites
+function slugify(text: string): string {
+  if (!text) return '';
+  return text
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/&/g, '-e-')
+    .replace(/[^a-z0-9\s-]/g, '') // remove caracteres especiais
+    .trim()
+    .replace(/\s+/g, '-') // substitui espaços por hífens
+    .replace(/-+/g, '-'); // remove múltiplos hífens
+}
+
+// Helper to extract or generate the official Nyroh site URL
+function extractNyrohSiteUrl(data: any, name: string): string {
+  if (!data || typeof data !== 'object') {
+    const slug = slugify(name);
+    return slug ? `https://www.nyroh.com.br/#/site/${slug}` : '';
+  }
+
+  // 1. Procurar chaves diretas que contenham nyroh
+  const candidateKeys = [
+    'nyrohUrl', 'nyroh_url', 'siteNyroh', 'site_nyroh', 'nyrohSite', 'nyroh_site',
+    'publicUrl', 'public_url', 'siteUrl', 'site_url', 'site', 'website', 'url', 'previewUrl', 'link'
+  ];
+
+  for (const k of candidateKeys) {
+    const val = data[k];
+    if (typeof val === 'string' && (val.includes('nyroh.com.br') || val.includes('nyroh.com'))) {
+      let clean = val.trim();
+      if (!clean.startsWith('http://') && !clean.startsWith('https://')) clean = `https://${clean}`;
+      return clean;
+    }
+  }
+
+  // 2. Checar dithoSitesMetadata
+  if (data.dithoSitesMetadata && typeof data.dithoSitesMetadata === 'object') {
+    const dUrl = String(data.dithoSitesMetadata.publicUrl || data.dithoSitesMetadata.url || '').trim();
+    if (dUrl && (dUrl.includes('nyroh.com.br') || dUrl.includes('nyroh.com'))) {
+      return dUrl.startsWith('http') ? dUrl : `https://${dUrl}`;
+    }
+  }
+
+  // 3. Checar campos de slug
+  const slugKeys = ['slug', 'siteSlug', 'site_slug', 'slugName', 'slug_name', 'subdomain'];
+  for (const k of slugKeys) {
+    const val = data[k];
+    if (typeof val === 'string' && val.trim() && !val.includes('http') && !val.includes(' ') && !val.includes('/')) {
+      return `https://www.nyroh.com.br/#/site/${val.trim()}`;
+    }
+  }
+
+  // 4. Checar no JSON inteiro se existe URL da nyroh.com.br
+  try {
+    const jsonStr = JSON.stringify(data);
+    const match = jsonStr.match(/https?:\/\/[^"\s\\]*nyroh\.com\.br[^"\s\\]*/i);
+    if (match && match[0]) {
+      return match[0].replace(/\\/g, '');
+    }
+  } catch (e) {}
+
+  // 5. Se nenhuma chave explícita da Nyroh veio no JSON, gera automaticamente pelo nome do cliente!
+  const slug = slugify(name);
+  if (slug) {
+    return `https://www.nyroh.com.br/#/site/${slug}`;
+  }
+
+  return '';
+}
+
 // Helper function to process lead items (shared between zip upload and batch JSON API)
 async function processLeadItems(items: any[]) {
   let totalProcessed = 0;
@@ -1148,13 +1238,8 @@ async function processLeadItems(items: any[]) {
       '(Sem telefone)'
     ).trim();
 
-    let publicUrl = '';
-    if (data.dithoSitesMetadata && typeof data.dithoSitesMetadata === 'object') {
-      publicUrl = String(data.dithoSitesMetadata.publicUrl || data.dithoSitesMetadata.url || '').trim();
-    }
-    if (!publicUrl) {
-      publicUrl = String(data.publicUrl || data.public_url || data.website || data.url || data.siteUrl || data.site || '').trim();
-    }
+    // Extrai ou constrói SEMPRE o site oficial da Nyroh
+    const publicUrl = extractNyrohSiteUrl(data, name);
 
     const salespersonId = String(data.salespersonId || data.salesperson_id || 'seller-thomas').trim();
     const salespersonName = String(data.salespersonName || data.salesperson_name || 'Thomas').trim();
