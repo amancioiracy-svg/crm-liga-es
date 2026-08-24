@@ -97,10 +97,15 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
     }
   }, [salespeople]);
 
-  // Lead pools calculation
-  const newLeads = leads.filter((l) => (l.columnStatus === 'leads' || l.columnStatus === 'Leads') && (l.callHistory?.length || 0) === 0);
-  const unattemptedLeads = leads.filter((l) => (l.callHistory?.length || 0) === 0);
-  const unconvertedLeads = leads.filter((l) => l.columnStatus !== 'fechamento');
+  // Lead pools calculation (check both callCount from server and local callHistory)
+  const isUncontacted = (l: any) => {
+    const count = Number(l.callCount) || (l.calls?.length) || (l.callHistory?.length) || 0;
+    return count === 0;
+  };
+
+  const newLeads = leads.filter((l) => (l.columnStatus === 'leads' || l.columnStatus === 'Leads') && isUncontacted(l));
+  const unattemptedLeads = leads.filter((l) => isUncontacted(l));
+  const unconvertedLeads = leads.filter((l) => (l.columnStatus || '').toLowerCase() !== 'fechado' && (l.columnStatus || '').toLowerCase() !== 'fechamento');
   
   // Selected pool count for auto distribution
   const autoScopeCount = autoDistributeScope === 'new_only'
@@ -173,9 +178,10 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
     }
   };
 
-  const handleSaveQuotas = async () => {
+  const handleSaveQuotasAndApply = async (andDistribute: boolean = false) => {
     setSavingQuotas(true);
     try {
+      // 1. Save quotas
       const res = await fetch('/api/salespeople/quotas/batch', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -185,10 +191,37 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
         const data = await res.json();
         throw new Error(data.error || 'Erro ao salvar quotas.');
       }
-      onShowToast('✅ Porcentagens (%) salvas com sucesso!');
-      await onRefreshSalespeople();
+
+      // 2. If distribute was requested, execute division immediately
+      if (andDistribute) {
+        if (autoScopeCount === 0) {
+          onShowToast('✅ Porcentagens salvas! (Nenhum lead no grupo selecionado para distribuir)');
+          await onRefreshSalespeople();
+          return;
+        }
+
+        const distRes = await fetch('/api/leads/distribute-by-quotas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetScope: autoDistributeScope,
+            quotas: quotasState
+          })
+        });
+        const distData = await distRes.json();
+        if (!distRes.ok) {
+          throw new Error(distData.error || 'Erro ao redistribuir leads.');
+        }
+
+        onShowToast(`🎉 Sucesso! Porcentagens salvas e ${distData.totalDistributed || autoScopeCount} leads distribuídos entre a equipe!`);
+        await onRefreshLeads();
+        await onRefreshSalespeople();
+      } else {
+        onShowToast('✅ Porcentagens salvas com sucesso no cadastro da equipe!');
+        await onRefreshSalespeople();
+      }
     } catch (err: any) {
-      onShowToast(err.message || 'Erro ao salvar quotas.');
+      onShowToast(err.message || 'Erro ao salvar/distribuir.');
     } finally {
       setSavingQuotas(false);
     }
@@ -238,28 +271,27 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
 
     setDistributing(true);
     try {
-      const targetSeller = salespeople.find((s) => s.id === distTargetId);
       const res = await fetch('/api/leads/distribute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceFilter: distSourceFilter,
           targetSalespersonId: distTargetId,
-          targetSalespersonName: targetSeller?.name || 'Vendedor',
-          count: calculatedLeadsToDistribute
+          mode: distMode === 'percent' ? 'percentage' : 'count',
+          value: distMode === 'percent' ? distPercentage : distCount,
+          sourceSalespersonId: 'ALL'
         })
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Erro ao distribuir leads.');
+        throw new Error(data.error || 'Erro ao transferir leads.');
       }
 
-      onShowToast(`✅ ${data.message || 'Leads transferidos com sucesso!'}`);
+      onShowToast(`✅ ${data.transferredCount || calculatedLeadsToDistribute} leads transferidos para ${data.targetSalespersonName || 'vendedora'} com sucesso!`);
       await onRefreshLeads();
       await onRefreshSalespeople();
     } catch (err: any) {
-      onShowToast(err.message || 'Erro ao distribuir leads.');
+      onShowToast(err.message || 'Erro ao transferir leads.');
     } finally {
       setDistributing(false);
     }
@@ -857,14 +889,27 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
                 </p>
               </div>
 
-              <button
-                onClick={handleSaveQuotas}
-                disabled={savingQuotas}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-2xs flex items-center gap-1.5 transition self-start sm:self-auto"
-              >
-                <Check className="w-4 h-4" />
-                <span>{savingQuotas ? 'Salvando...' : 'Salvar Porcentagens'}</span>
-              </button>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  onClick={() => handleSaveQuotasAndApply(false)}
+                  disabled={savingQuotas}
+                  className="px-3.5 py-2 bg-neutral-100 hover:bg-neutral-200 disabled:opacity-50 text-neutral-800 text-xs font-bold rounded-xl border border-neutral-300 flex items-center gap-1.5 transition"
+                  title="Salvar apenas as porcentagens de cota no banco"
+                >
+                  <Check className="w-3.5 h-3.5 text-neutral-600" />
+                  <span>{savingQuotas ? 'Salvando...' : 'Salvar %'}</span>
+                </button>
+
+                <button
+                  onClick={() => handleSaveQuotasAndApply(true)}
+                  disabled={savingQuotas || autoDistributing || autoScopeCount === 0}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition"
+                  title="Salva as % e divide imediatamente os leads do grupo selecionado acima"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>{savingQuotas ? 'Processando...' : `Salvar e Fatiar ${autoScopeCount} Leads`}</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
