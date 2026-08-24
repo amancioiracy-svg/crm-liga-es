@@ -846,8 +846,27 @@ app.post('/api/leads/distribute', async (req, res) => {
 // 6.1 AUTOMATIC QUOTA-BASED LEAD DISTRIBUTION
 // Distributes selected scope of leads across salespeople according to their configured % quotas
 app.post('/api/leads/distribute-by-quotas', async (req, res) => {
-  const { targetScope = 'new_only', sourceSalespersonId } = req.body || {};
+  const { targetScope = 'new_only', sourceSalespersonId, quotas } = req.body || {};
   try {
+    // If client sent current quotas state, optionally update DB quotas first
+    if (quotas && typeof quotas === 'object') {
+      if (usePostgres && pgPool) {
+        for (const [sId, pct] of Object.entries(quotas)) {
+          await pgPool.query(
+            `UPDATE salespeople SET distribution_percent = $1 WHERE id = $2`,
+            [Number(pct) || 0, sId]
+          );
+        }
+      } else {
+        for (const [sId, pct] of Object.entries(quotas)) {
+          const seller = memorySalespeopleMap.get(sId);
+          if (seller) {
+            seller.distributionPercent = Number(pct) || 0;
+          }
+        }
+      }
+    }
+
     let allSellers: Salesperson[] = [];
     if (usePostgres && pgPool) {
       const spRes = await pgPool.query(`SELECT id, name, distribution_percent AS "distributionPercent" FROM salespeople ORDER BY is_default DESC, created_at ASC`);
@@ -856,12 +875,20 @@ app.post('/api/leads/distribute-by-quotas', async (req, res) => {
       allSellers = Array.from(memorySalespeopleMap.values());
     }
 
+    // Override with in-memory / payload quotas if provided
+    if (quotas && typeof quotas === 'object') {
+      allSellers = allSellers.map(s => ({
+        ...s,
+        distributionPercent: quotas[s.id] !== undefined ? Number(quotas[s.id]) || 0 : (s.distributionPercent || 0)
+      }));
+    }
+
     if (allSellers.length === 0) {
       return res.status(400).json({ error: 'Nenhum vendedor cadastrado na equipe.' });
     }
 
     // Get eligible leads based on targetScope
-    // 'new_only': Column 'Leads' and 0 calls
+    // 'new_only': Column 'Leads' (case-insensitive) and 0 calls
     // 'all_unattempted': Any column with 0 calls
     // 'all': Entire base of leads (re-split existing and new)
     // 'unconverted': Leads that are NOT in 'fechamento' (e.g. tentativa 1, 2, 3, sem_interesse, etc.)
@@ -876,7 +903,7 @@ app.post('/api/leads/distribute-by-quotas', async (req, res) => {
           SELECT l.id
           FROM leads l
           LEFT JOIN calls c ON l.id = c.lead_id
-          WHERE l.column_status = 'Leads'
+          WHERE LOWER(l.column_status) = 'leads'
         `;
         if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
           params.push(sourceSalespersonId);
@@ -906,7 +933,7 @@ app.post('/api/leads/distribute-by-quotas', async (req, res) => {
         query = `
           SELECT l.id
           FROM leads l
-          WHERE l.column_status != 'fechamento'
+          WHERE LOWER(l.column_status) != 'fechamento'
         `;
         if (sourceSalespersonId && sourceSalespersonId !== 'ALL') {
           params.push(sourceSalespersonId);
@@ -934,11 +961,11 @@ app.post('/api/leads/distribute-by-quotas', async (req, res) => {
           }
           const calls = memoryCallLogsMap.get(l.id) || [];
           if (targetScope === 'new_only') {
-            return l.columnStatus === 'Leads' && calls.length === 0;
+            return (l.columnStatus || '').toLowerCase() === 'leads' && calls.length === 0;
           } else if (targetScope === 'all_unattempted') {
             return calls.length === 0;
           } else if (targetScope === 'unconverted') {
-            return l.columnStatus !== 'fechamento';
+            return (l.columnStatus || '').toLowerCase() !== 'fechamento';
           }
           return true; // 'all'
         })

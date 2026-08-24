@@ -206,7 +206,8 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          targetScope: autoDistributeScope
+          targetScope: autoDistributeScope,
+          quotas: quotasState
         })
       });
       const data = await res.json();
@@ -621,95 +622,158 @@ export const SalesTeamManagementView: React.FC<SalesTeamManagementViewProps> = (
             </div>
 
             {/* Scope Selection Pills */}
-            <div className="bg-white/80 backdrop-blur-xs p-4 rounded-xl border border-emerald-200/80 space-y-3">
-              <span className="text-xs font-bold text-neutral-800 block">
-                Selecione o Grupo de Leads para Redistribuir:
-              </span>
+            <div className="bg-white/80 backdrop-blur-xs p-4 rounded-xl border border-emerald-200/80 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                  <span>1. Selecione o Grupo de Leads:</span>
+                  <span className="text-[11px] font-normal text-neutral-500">(Clique em um dos 4 cartões abaixo)</span>
+                </span>
+                <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
+                  Total selecionado: {autoScopeCount} leads
+                </span>
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 {/* Option 1: Novos */}
                 <button
                   type="button"
                   onClick={() => setAutoDistributeScope('new_only')}
-                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                  className={`p-3.5 rounded-xl border text-left transition relative flex flex-col justify-between cursor-pointer ${
                     autoDistributeScope === 'new_only'
-                      ? 'bg-emerald-50/90 border-emerald-600 shadow-2xs ring-2 ring-emerald-500/20'
-                      : 'bg-white border-neutral-200 hover:border-neutral-300'
+                      ? 'bg-emerald-100/90 border-emerald-600 shadow-md ring-2 ring-emerald-500/30'
+                      : 'bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-bold text-neutral-900">🟢 Apenas Leads Novos</span>
-                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900">
                       {newLeads.length}
                     </span>
                   </div>
-                  <p className="text-[11px] text-neutral-500">
+                  <p className="text-[11px] text-neutral-600">
                     Coluna "Leads" ainda não abordados (0 ligações)
                   </p>
+                  {autoDistributeScope === 'new_only' && (
+                    <div className="mt-2 text-[10px] font-bold text-emerald-800 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Grupo Selecionado
+                    </div>
+                  )}
                 </button>
 
                 {/* Option 2: Toda a Base Existente */}
                 <button
                   type="button"
                   onClick={() => setAutoDistributeScope('all')}
-                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                  className={`p-3.5 rounded-xl border text-left transition relative flex flex-col justify-between cursor-pointer ${
                     autoDistributeScope === 'all'
-                      ? 'bg-blue-50/90 border-blue-600 shadow-2xs ring-2 ring-blue-500/20'
-                      : 'bg-white border-neutral-200 hover:border-neutral-300'
+                      ? 'bg-blue-100/90 border-blue-600 shadow-md ring-2 ring-blue-500/30'
+                      : 'bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-bold text-neutral-900">🔵 Toda a Base de Leads</span>
-                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-blue-200 text-blue-900">
                       {leads.length}
                     </span>
                   </div>
-                  <p className="text-[11px] text-neutral-500">
+                  <p className="text-[11px] text-neutral-600">
                     Todos os leads que já existem no CRM (rebalanceia carteiras)
                   </p>
+                  {autoDistributeScope === 'all' && (
+                    <div className="mt-2 text-[10px] font-bold text-blue-800 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Grupo Selecionado
+                    </div>
+                  )}
                 </button>
 
                 {/* Option 3: Todos sem ligação */}
                 <button
                   type="button"
                   onClick={() => setAutoDistributeScope('all_unattempted')}
-                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                  className={`p-3.5 rounded-xl border text-left transition relative flex flex-col justify-between cursor-pointer ${
                     autoDistributeScope === 'all_unattempted'
-                      ? 'bg-purple-50/90 border-purple-600 shadow-2xs ring-2 ring-purple-500/20'
-                      : 'bg-white border-neutral-200 hover:border-neutral-300'
+                      ? 'bg-purple-100/90 border-purple-600 shadow-md ring-2 ring-purple-500/30'
+                      : 'bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-bold text-neutral-900">🟣 Sem Nenhuma Ligação</span>
-                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-purple-200 text-purple-900">
                       {unattemptedLeads.length}
                     </span>
                   </div>
-                  <p className="text-[11px] text-neutral-500">
+                  <p className="text-[11px] text-neutral-600">
                     Leads em qualquer coluna com 0 ligações registradas
                   </p>
+                  {autoDistributeScope === 'all_unattempted' && (
+                    <div className="mt-2 text-[10px] font-bold text-purple-800 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Grupo Selecionado
+                    </div>
+                  )}
                 </button>
 
                 {/* Option 4: Não fechados (Tentativas / Parados) */}
                 <button
                   type="button"
                   onClick={() => setAutoDistributeScope('unconverted')}
-                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                  className={`p-3.5 rounded-xl border text-left transition relative flex flex-col justify-between cursor-pointer ${
                     autoDistributeScope === 'unconverted'
-                      ? 'bg-amber-50/90 border-amber-600 shadow-2xs ring-2 ring-amber-500/20'
-                      : 'bg-white border-neutral-200 hover:border-neutral-300'
+                      ? 'bg-amber-100/90 border-amber-600 shadow-md ring-2 ring-amber-500/30'
+                      : 'bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-bold text-neutral-900">🟠 Não Fechados</span>
-                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
                       {unconvertedLeads.length}
                     </span>
                   </div>
-                  <p className="text-[11px] text-neutral-500">
+                  <p className="text-[11px] text-neutral-600">
                     Tentativas 1, 2, 3 e sem interesse (exceto Fechamento)
                   </p>
+                  {autoDistributeScope === 'unconverted' && (
+                    <div className="mt-2 text-[10px] font-bold text-amber-800 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Grupo Selecionado
+                    </div>
+                  )}
                 </button>
+              </div>
+
+              {/* Dynamic Live Calculation Table */}
+              <div className="mt-3 p-3.5 rounded-xl bg-neutral-900 text-white shadow-xs space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-neutral-800 pb-2">
+                  <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Simulação de Divisão ao Executar:
+                  </span>
+                  <span className="text-[11px] text-neutral-400">
+                    Grupo Ativo: <strong className="text-white">
+                      {autoDistributeScope === 'new_only' && `Apenas Leads Novos (${newLeads.length})`}
+                      {autoDistributeScope === 'all' && `Toda a Base (${leads.length})`}
+                      {autoDistributeScope === 'all_unattempted' && `Sem Nenhuma Ligação (${unattemptedLeads.length})`}
+                      {autoDistributeScope === 'unconverted' && `Não Fechados (${unconvertedLeads.length})`}
+                    </strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {salespeople.map((s) => {
+                    const pct = quotasState[s.id] ?? (s.distributionPercent || 0);
+                    const count = totalQuotaSum > 0 ? Math.round((autoScopeCount * pct) / totalQuotaSum) : 0;
+                    return (
+                      <div key={s.id} className="bg-neutral-800/80 p-2.5 rounded-lg border border-neutral-700/60 flex flex-col justify-between">
+                        <div className="flex items-center gap-1.5 min-w-0 mb-1">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                          <span className="text-xs font-bold text-neutral-200 truncate">{s.name}</span>
+                        </div>
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-[11px] font-mono text-neutral-400">{pct}%</span>
+                          <span className="text-xs font-bold text-emerald-400 font-mono">~{count} leads</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
