@@ -957,6 +957,87 @@ async function processLeadItems(items: any[]) {
   return { totalProcessed, insertedCount, skippedDuplicates };
 }
 
+// --------------------------------------------------------------------------
+// RECOVERY ENDPOINT: Varre o banco e recupera telefones reais
+// --------------------------------------------------------------------------
+app.post('/api/leads/recover-phones', async (req, res) => {
+  try {
+    let recoveredCount = 0;
+
+    if (usePostgres && pgPool) {
+      // 1. Procura em registros de chamadas anteriores
+      const callsWithComments = await pgPool.query(`
+        SELECT c.lead_id, c.comment, c.tag, l.phone_number AS current_phone
+        FROM calls c
+        JOIN leads l ON c.lead_id = l.id
+        WHERE l.phone_number = '(Sem telefone)' OR l.phone_number = '' OR l.phone_number IS NULL
+      `);
+
+      for (const row of callsWithComments.rows) {
+        const text = `${row.comment || ''} ${row.tag || ''}`;
+        const match = text.match(/(?:\(?([1-9]{2})\)?\s*?)?(9\d{4}[-\s]?\d{4}|\d{4}[-\s]?\d{4})/);
+        if (match && match[0]) {
+          const cleanPhone = match[0].trim();
+          await pgPool.query(
+            `UPDATE leads SET phone_number = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+            [cleanPhone, row.lead_id]
+          );
+          recoveredCount++;
+        }
+      }
+
+      // 2. Extrai telefone se o ID, Nome ou link contiver números válidos
+      const leadsWithoutPhone = await pgPool.query(`
+        SELECT id, name, public_url FROM leads 
+        WHERE phone_number = '(Sem telefone)' OR phone_number = '' OR phone_number IS NULL
+      `);
+
+      for (const lead of leadsWithoutPhone.rows) {
+        const textToSearch = `${lead.id} ${lead.name} ${lead.public_url || ''}`;
+        const phoneMatch = textToSearch.match(/(?:\+?55\s?)?(?:\(?([1-9]{2})\)?\s*?)?(9\d{4}[-\s]?\d{4})/);
+        if (phoneMatch && phoneMatch[0]) {
+          const foundNumber = phoneMatch[0].trim();
+          if (foundNumber.replace(/\D/g, '').length >= 8) {
+            await pgPool.query(
+              `UPDATE leads SET phone_number = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+              [foundNumber, lead.id]
+            );
+            recoveredCount++;
+          }
+        }
+      }
+
+      return res.json({
+        success: true,
+        recoveredCount,
+        message: `${recoveredCount} telefones recuperados e restaurados no banco!`
+      });
+    } else {
+      for (const lead of memoryLeadsMap.values()) {
+        if (!lead.phoneNumber || lead.phoneNumber === '(Sem telefone)') {
+          const calls = memoryCallLogsMap.get(lead.id) || [];
+          for (const c of calls) {
+            const match = `${c.comment} ${c.tag}`.match(/(?:\(?([1-9]{2})\)?\s*?)?(9\d{4}[-\s]?\d{4}|\d{4}[-\s]?\d{4})/);
+            if (match && match[0]) {
+              lead.phoneNumber = match[0].trim();
+              recoveredCount++;
+              break;
+            }
+          }
+        }
+      }
+      return res.json({
+        success: true,
+        recoveredCount,
+        message: `${recoveredCount} telefones restaurados em memória!`
+      });
+    }
+  } catch (err: any) {
+    console.error('Error recovering phones:', err);
+    res.status(500).json({ error: `Erro ao recuperar telefones: ${err.message}` });
+  }
+});
+
 // 2. Upload ZIP recursively and parse JSONs
 app.post('/api/upload-zip', upload.single('zipFile'), async (req, res) => {
   try {
@@ -1383,6 +1464,44 @@ app.put('/api/leads/:id/status', async (req, res) => {
   } catch (error) {
     console.error('Error updating lead status:', error);
     res.status(500).json({ error: 'Erro ao atualizar coluna do lead.' });
+  }
+});
+
+// Update full lead properties (Name, Phone, PublicUrl)
+app.put('/api/leads/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, phoneNumber, publicUrl } = req.body;
+
+  try {
+    if (usePostgres && pgPool) {
+      const result = await pgPool.query(
+        `UPDATE leads 
+         SET name = COALESCE($1, name),
+             phone_number = COALESCE($2, phone_number),
+             public_url = COALESCE($3, public_url),
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $4 RETURNING *`,
+        [name || null, phoneNumber || null, publicUrl || null, id]
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: 'Lead não encontrado.' });
+      }
+      return res.json({ success: true, lead: result.rows[0] });
+    } else {
+      const lead = memoryLeadsMap.get(id);
+      if (!lead) {
+        return res.status(404).json({ error: 'Lead não encontrado.' });
+      }
+      if (name) lead.name = name;
+      if (phoneNumber) lead.phoneNumber = phoneNumber;
+      if (publicUrl !== undefined) lead.publicUrl = publicUrl;
+      lead.updatedAt = new Date().toISOString();
+      memoryLeadsMap.set(id, lead);
+      return res.json({ success: true, lead });
+    }
+  } catch (error: any) {
+    console.error('Error updating lead:', error);
+    res.status(500).json({ error: 'Erro ao atualizar dados do lead.' });
   }
 });
 

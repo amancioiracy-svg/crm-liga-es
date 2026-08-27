@@ -385,8 +385,32 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
           )}
         </div>
 
-        {/* Botões de Ação: Atualizar via JSON & Exportar CSV */}
+        {/* Botões de Ação: Recuperar Telefones, Atualizar via JSON & Exportar CSV */}
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                onShowToast('Varrendo banco de dados para recuperar telefones...');
+                const res = await fetch('/api/leads/recover-phones', { method: 'POST' });
+                const data = await res.json();
+                if (data.recoveredCount > 0) {
+                  onShowToast(`🎉 ${data.recoveredCount} telefones recuperados com sucesso! Atualizando...`);
+                  setTimeout(() => window.location.reload(), 1200);
+                } else {
+                  onShowToast('Varredura concluída. Nenhum número adicional encontrado nos históricos.');
+                }
+              } catch (e) {
+                onShowToast('Erro ao varrer banco para recuperar telefones.');
+              }
+            }}
+            className="inline-flex items-center justify-center gap-1.5 px-2.5 md:px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 rounded-lg shadow-2xs transition-all"
+            title="Procura e restaura números de telefone a partir de históricos de chamadas e registros"
+          >
+            <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Restaurar</span> Telefones
+          </button>
+
           <button
             type="button"
             onClick={onOpenJsonBatchModal}
