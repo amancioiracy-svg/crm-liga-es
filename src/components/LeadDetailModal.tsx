@@ -376,7 +376,11 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     <>
       <div 
         className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 overflow-hidden animate-in fade-in duration-150"
-        onClick={onClose}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            onClose();
+          }
+        }}
       >
         <div 
           className="bg-white w-full sm:max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[92vh] rounded-t-2xl sm:rounded-2xl shadow-2xl border-t sm:border border-neutral-200 flex flex-col relative overflow-hidden transition-all"
@@ -398,8 +402,8 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   <span className="text-[10px] font-mono text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded">
                     ID: {lead.id}
                   </span>
-                  <span className="text-[10px] font-semibold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full">
-                    {lead.columnStatus}
+                  <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                    Etapa: {selectedColumn}
                   </span>
                 </div>
 
@@ -420,13 +424,16 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               </button>
             </div>
 
-            {/* Direct Quick Action Bar (Discar, WhatsApp, Site) */}
+            {/* Direct Quick Action Bar (Discar, WhatsApp, Site da Nyroh) */}
             <div className="flex flex-wrap items-center gap-2 mt-2.5 pt-2.5 border-t border-neutral-100">
               {/* Dial Button */}
-              {lead.phoneNumber ? (
+              {lead.phoneNumber && lead.phoneNumber !== '(Sem telefone)' ? (
                 <a
                   href={getDialerTelLink(lead.phoneNumber)}
-                  onClick={() => handleStartCall(true)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStartCall(true);
+                  }}
                   className="flex-1 min-w-[140px] flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-xs transition-all touch-manipulation"
                   title="Discar no celular com 0 automático na frente"
                 >
@@ -443,7 +450,8 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               {/* WhatsApp Button */}
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   handleStartCall(false);
                   const template = getStoredWhatsAppTemplate();
                   const msgText = formatWhatsAppMessage(template, {
@@ -460,24 +468,26 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 <span>WhatsApp</span>
               </button>
 
-              {/* Site Link */}
+              {/* Site Nyroh Link */}
               {lead.publicUrl && (
                 <a
                   href={lead.publicUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs border border-blue-200 transition-colors shrink-0 touch-manipulation"
-                  title="Abrir site da empresa"
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-2xs transition-colors shrink-0 touch-manipulation"
+                  title="Abrir Site da Nyroh"
                 >
-                  <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
-                  <span className="hidden xs:inline">Site</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-white" />
+                  <span>Site Nyroh</span>
                 </a>
               )}
 
               {/* QR Code */}
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   handleStartCall(false);
                   setShowQrModal(true);
                 }}
@@ -594,12 +604,51 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
             {/* Form de Registro da Ligação */}
             <form onSubmit={handleSubmitCallForm} className="bg-white border border-neutral-200 rounded-xl p-3.5 sm:p-4 shadow-2xs space-y-3.5">
               
-              {/* Seletor de Etiquetas / Resultado */}
+              {/* 1. SELETOR DE ETAPA DO PIPELINE (NO TOPO, ANTES DAS TAGS) */}
+              <div className="bg-neutral-50/80 p-3 rounded-xl border border-neutral-200/90 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Mover para Etapa do Funil *</span>
+                  </label>
+                  <span className="text-[10px] font-semibold text-neutral-500">
+                    Atual: <strong className="text-blue-700">{selectedColumn}</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {PIPELINE_COLUMNS.map((col) => {
+                    const isCurrent = selectedColumn === col;
+                    return (
+                      <button
+                        type="button"
+                        key={col}
+                        onClick={async () => {
+                          setSelectedColumn(col);
+                          if (lead && col !== lead.columnStatus) {
+                            await onUpdateColumn(lead.id, col);
+                            onShowToast(`Etapa alterada para "${col}"`);
+                          }
+                        }}
+                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition-all text-center truncate touch-manipulation ${
+                          isCurrent
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                        }`}
+                      >
+                        {col}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Seletor de Etiquetas / Resultado da Ligação */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-bold text-neutral-800 flex items-center gap-1">
                     <TagIcon className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Resultado da Ligação *</span>
+                    <span>Resultado da Ligação (Tags) *</span>
                   </label>
                   <button
                     type="button"
@@ -639,7 +688,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Agendamento de Retorno / Follow-Up */}
+              {/* 3. Agendamento de Retorno / Follow-Up */}
               <div className="bg-neutral-50/90 p-3 rounded-xl border border-neutral-200 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
@@ -715,7 +764,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Comentários / Observações */}
+              {/* 4. Comentários / Observações */}
               <div>
                 <label className="block text-xs font-bold text-neutral-800 mb-1">
                   Comentários / Observações (Opcional)
@@ -729,52 +778,33 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 />
               </div>
 
-              {/* Estágio do Pipeline & Vendedor Responsável */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-neutral-100">
-                <div>
+              {/* 5. Vendedor Responsável (se houver vendedores configurados) */}
+              {salespeople.length > 0 && (
+                <div className="pt-2 border-t border-neutral-100">
                   <label className="block text-[11px] font-bold text-neutral-600 mb-1">
-                    Mover para Etapa:
+                    Vendedor Responsável:
                   </label>
                   <select
-                    value={selectedColumn}
-                    onChange={handleColumnChange}
-                    className="w-full text-xs bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 text-neutral-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    value={lead.salespersonId || 'seller-thomas'}
+                    onChange={async (e) => {
+                      const newSellerId = e.target.value;
+                      const target = salespeople.find((s) => s.id === newSellerId);
+                      const newSellerName = target ? target.name : 'Thomas';
+                      if (onReassignLead) {
+                        await onReassignLead(lead.id, newSellerId, newSellerName);
+                        onShowToast(`Lead atribuído a ${newSellerName}`);
+                      }
+                    }}
+                    className="w-full text-xs bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 font-semibold text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
-                    {PIPELINE_COLUMNS.map((col) => (
-                      <option key={col} value={col}>
-                        {col}
+                    {salespeople.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} {s.isDefault ? '(Principal)' : ''}
                       </option>
                     ))}
                   </select>
                 </div>
-
-                {salespeople.length > 0 && (
-                  <div>
-                    <label className="block text-[11px] font-bold text-neutral-600 mb-1">
-                      Vendedor Responsável:
-                    </label>
-                    <select
-                      value={lead.salespersonId || 'seller-thomas'}
-                      onChange={async (e) => {
-                        const newSellerId = e.target.value;
-                        const target = salespeople.find((s) => s.id === newSellerId);
-                        const newSellerName = target ? target.name : 'Thomas';
-                        if (onReassignLead) {
-                          await onReassignLead(lead.id, newSellerId, newSellerName);
-                          onShowToast(`Lead atribuído a ${newSellerName}`);
-                        }
-                      }}
-                      className="w-full text-xs bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 font-semibold text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                    >
-                      {salespeople.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} {s.isDefault ? '(Principal)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
+              )}
             </form>
 
             {/* Histórico Cronológico de Ligações */}

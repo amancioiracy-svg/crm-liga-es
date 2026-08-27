@@ -194,13 +194,22 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           </div>
         )}
 
-        {/* Tag do site se houver */}
+        {/* Link / Badge do Site Nyroh se houver */}
         {lead.publicUrl && (
-          <div className="mb-3">
-            <span className="inline-flex items-center gap-1 text-[10px] text-neutral-500 bg-neutral-50 px-1.5 py-0.5 rounded border border-neutral-200/60 max-w-full truncate">
-              <ExternalLink className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
-              <span className="truncate">{lead.publicUrl.replace(/^https?:\/\//, '')}</span>
-            </span>
+          <div className="mb-2.5">
+            <a
+              href={lead.publicUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-blue-700 bg-blue-50/90 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 max-w-full truncate transition-colors"
+              title="Abrir Site da Nyroh"
+            >
+              <ExternalLink className="w-3 h-3 text-blue-600 shrink-0" />
+              <span className="truncate">
+                {lead.publicUrl.toLowerCase().includes('nyroh') ? '🌐 Site Nyroh' : lead.publicUrl.replace(/^https?:\/\//, '')}
+              </span>
+            </a>
           </div>
         )}
 

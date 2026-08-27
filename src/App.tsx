@@ -26,6 +26,7 @@ export default function App() {
   const [loadingLeads, setLoadingLeads] = useState(true);
   const [activeTab, setActiveTab] = useState<'kanban' | 'table' | 'dashboard'>('kanban');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   
   // Modals & Toasts
   const [selectedLeadForDetail, setSelectedLeadForDetail] = useState<Lead | null>(null);
@@ -259,7 +260,7 @@ export default function App() {
     }
   };
 
-  // Filter leads by selected tags AND selected salesperson
+  // Filter leads by selected tags, salesperson AND global search query (Nome, Telefone, Site Nyroh, ID, Tag)
   const displayedLeads = leads.filter((l) => {
     // 1. Salesperson filter
     if (selectedSalespersonId !== 'ALL') {
@@ -268,10 +269,32 @@ export default function App() {
     }
 
     // 2. Tag filter
-    if (selectedTagFilters.length === 0) return true;
-    if (!l.lastCallTag) return false;
-    const lTags = l.lastCallTag.split(',').map((t) => t.trim());
-    return selectedTagFilters.some((fTag) => lTags.includes(fTag));
+    if (selectedTagFilters.length > 0) {
+      if (!l.lastCallTag) return false;
+      const lTags = l.lastCallTag.split(',').map((t) => t.trim());
+      const hasTag = selectedTagFilters.some((fTag) => lTags.includes(fTag));
+      if (!hasTag) return false;
+    }
+
+    // 3. Global search filter
+    if (searchQuery.trim()) {
+      const cleanSearch = searchQuery.trim().toLowerCase();
+      const searchDigits = cleanSearch.replace(/\D/g, '');
+      const leadPhoneDigits = (l.phoneNumber || '').replace(/\D/g, '');
+
+      const matches =
+        l.name.toLowerCase().includes(cleanSearch) ||
+        l.phoneNumber.toLowerCase().includes(cleanSearch) ||
+        (searchDigits.length >= 3 && leadPhoneDigits.includes(searchDigits)) ||
+        (l.publicUrl && l.publicUrl.toLowerCase().includes(cleanSearch)) ||
+        l.id.toLowerCase().includes(cleanSearch) ||
+        (l.lastCallTag && l.lastCallTag.toLowerCase().includes(cleanSearch)) ||
+        (l.salespersonName && l.salespersonName.toLowerCase().includes(cleanSearch));
+
+      if (!matches) return false;
+    }
+
+    return true;
   });
 
   const activeSalesperson = salespeople.find((s) => s.id === selectedSalespersonId);
@@ -412,14 +435,17 @@ export default function App() {
           </div>
         </header>
 
-        {/* Barra de Métricas & Filtros de Vendas (Métricas 100% isoladas para o vendedor selecionado) */}
+        {/* Barra de Métricas, Busca Global & Filtros de Vendas */}
         {activeTab !== 'dashboard' && (
           <MetricsBar
             leads={displayedLeads}
+            totalLeadsCount={leads.length}
             tags={tags}
             selectedSalespersonId={selectedSalespersonId}
             selectedTagFilters={selectedTagFilters}
             onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
+            searchQuery={searchQuery}
+            onSearchChange={(q) => setSearchQuery(q)}
             onShowToast={showToast}
             onOpenJsonBatchModal={() => setIsJsonModalOpen(true)}
           />

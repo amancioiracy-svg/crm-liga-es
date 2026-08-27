@@ -727,6 +727,140 @@ app.post('/api/leads/distribute', async (req, res) => {
   }
 });
 
+// Robust Helper functions for Phone & Nyroh URL Extraction
+function extractPhoneNumber(data: any): string {
+  if (!data || typeof data !== 'object') return '';
+
+  const candidates = [
+    data.phoneNumber,
+    data.phone_number,
+    data.phone,
+    data.telephone,
+    data.tel,
+    data.whatsapp,
+    data.celular,
+    data.telefone,
+    data.mobile,
+    data.contactPhone,
+    data.contact_phone,
+    data.numero,
+    data.numeroTelefone,
+    data.formatted_phone_number,
+    data.international_phone_number,
+    data.national_phone_number,
+    data.primaryPhone,
+    data.contact?.phone,
+    data.contact?.phoneNumber,
+    data.contact?.telefone,
+    data.contact?.celular,
+    data.contact?.whatsapp,
+    data.details?.phone,
+    data.details?.phoneNumber,
+    data.details?.telefone,
+    data.business?.phone,
+    data.business?.phoneNumber,
+    data.lead?.phone,
+    data.lead?.phoneNumber,
+    data.lead?.telefone
+  ];
+
+  // Check array candidates like data.phones or data.phoneNumbers
+  if (Array.isArray(data.phones) && data.phones.length > 0) {
+    candidates.unshift(data.phones[0]);
+  }
+  if (Array.isArray(data.phoneNumbers) && data.phoneNumbers.length > 0) {
+    candidates.unshift(data.phoneNumbers[0]);
+  }
+
+  for (const item of candidates) {
+    if (item !== undefined && item !== null) {
+      if (typeof item === 'string' && item.trim()) {
+        const cleaned = item.trim();
+        // Ignore dummy strings
+        if (cleaned !== '(Sem telefone)' && cleaned !== 'null' && cleaned !== 'undefined' && cleaned.replace(/\D/g, '').length >= 6) {
+          return cleaned;
+        }
+      } else if (typeof item === 'number') {
+        const str = String(item).trim();
+        if (str.length >= 6) return str;
+      } else if (typeof item === 'object') {
+        // e.g. { number: '...', value: '...' }
+        const sub = item.number || item.phone || item.value || item.formatted || '';
+        if (typeof sub === 'string' && sub.trim() && sub.replace(/\D/g, '').length >= 6) {
+          return sub.trim();
+        }
+      }
+    }
+  }
+
+  return '';
+}
+
+function extractNyrohUrl(data: any): string {
+  if (!data || typeof data !== 'object') return '';
+
+  // 1. Check direct metadata objects first (Nyroh / Ditho sites)
+  if (data.dithoSitesMetadata && typeof data.dithoSitesMetadata === 'object') {
+    const metaUrl = String(data.dithoSitesMetadata.publicUrl || data.dithoSitesMetadata.url || data.dithoSitesMetadata.siteUrl || '').trim();
+    if (metaUrl) return metaUrl;
+  }
+
+  // 2. Check explicit Nyroh / Ditho fields
+  const explicitNyrohFields = [
+    data.nyrohUrl,
+    data.nyroh_url,
+    data.site_nyroh,
+    data.siteNyroh,
+    data.nyrohSite,
+    data.nyroh_site,
+    data.dithoUrl,
+    data.ditho_url,
+    data.site_ditho,
+    data.previewUrl,
+    data.preview_url
+  ];
+
+  for (const field of explicitNyrohFields) {
+    if (typeof field === 'string' && field.trim()) {
+      return field.trim();
+    }
+  }
+
+  // 3. Scan all object fields for any URL containing nyroh or ditho
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'string') {
+      const lower = value.toLowerCase();
+      if ((lower.includes('nyroh.') || lower.includes('ditho.')) && (lower.startsWith('http://') || lower.startsWith('https://') || lower.includes('.com') || lower.includes('.app'))) {
+        return value.trim();
+      }
+    }
+  }
+
+  // 4. Check standard publicUrl fields (avoiding generic Google Search/Maps if possible)
+  const standardFields = [
+    data.publicUrl,
+    data.public_url,
+    data.siteUrl,
+    data.site_url,
+    data.publishedUrl,
+    data.website,
+    data.site,
+    data.url
+  ];
+
+  for (const field of standardFields) {
+    if (typeof field === 'string' && field.trim()) {
+      const trimmed = field.trim();
+      // Prioritize actual web URLs over google search / maps links
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.includes('.')) {
+        return trimmed;
+      }
+    }
+  }
+
+  return '';
+}
+
 // Helper function to process lead items (shared between zip upload and batch JSON API)
 async function processLeadItems(items: any[]) {
   let totalProcessed = 0;
@@ -759,39 +893,31 @@ async function processLeadItems(items: any[]) {
       'Lead sem nome'
     ).trim();
 
-    const phoneNumber = String(
-      data.phoneNumber ||
-      data.phone_number ||
-      data.phone ||
-      data.telephone ||
-      data.tel ||
-      data.contactPhone ||
-      data.whatsapp ||
-      '(Sem telefone)'
-    ).trim();
+    const rawExtractedPhone = extractPhoneNumber(data);
+    const phoneNumber = rawExtractedPhone || '(Sem telefone)';
 
-    let publicUrl = '';
-    if (data.dithoSitesMetadata && typeof data.dithoSitesMetadata === 'object') {
-      publicUrl = String(data.dithoSitesMetadata.publicUrl || data.dithoSitesMetadata.url || '').trim();
-    }
-    if (!publicUrl) {
-      publicUrl = String(data.publicUrl || data.public_url || data.website || data.url || data.siteUrl || data.site || '').trim();
-    }
+    const publicUrl = extractNyrohUrl(data);
 
     const salespersonId = String(data.salespersonId || data.salesperson_id || 'seller-thomas').trim();
     const salespersonName = String(data.salespersonName || data.salesperson_name || 'Thomas').trim();
 
     if (usePostgres && pgPool) {
-      const checkRes = await pgPool.query('SELECT id FROM leads WHERE id = $1', [leadId]);
+      const checkRes = await pgPool.query('SELECT id, phone_number, public_url FROM leads WHERE id = $1', [leadId]);
       const isExisting = checkRes.rows.length > 0;
 
       await pgPool.query(
         `INSERT INTO leads (id, name, phone_number, public_url, column_status, salesperson_id, salesperson_name)
          VALUES ($1, $2, $3, $4, 'Leads', $5, $6)
          ON CONFLICT (id) DO UPDATE SET
-           name = EXCLUDED.name,
-           phone_number = EXCLUDED.phone_number,
-           public_url = EXCLUDED.public_url,
+           name = CASE WHEN EXCLUDED.name != 'Lead sem nome' AND EXCLUDED.name != '' THEN EXCLUDED.name ELSE leads.name END,
+           phone_number = CASE 
+             WHEN EXCLUDED.phone_number != '(Sem telefone)' AND EXCLUDED.phone_number != '' AND EXCLUDED.phone_number IS NOT NULL THEN EXCLUDED.phone_number 
+             ELSE leads.phone_number 
+           END,
+           public_url = CASE 
+             WHEN EXCLUDED.public_url != '' AND EXCLUDED.public_url IS NOT NULL THEN EXCLUDED.public_url 
+             ELSE leads.public_url 
+           END,
            updated_at = CURRENT_TIMESTAMP`,
         [leadId, name, phoneNumber, publicUrl, salespersonId, salespersonName]
       );
@@ -804,8 +930,8 @@ async function processLeadItems(items: any[]) {
     } else {
       if (memoryLeadsMap.has(leadId)) {
         const existing = memoryLeadsMap.get(leadId)!;
-        existing.name = name;
-        existing.phoneNumber = phoneNumber;
+        if (name && name !== 'Lead sem nome') existing.name = name;
+        if (phoneNumber && phoneNumber !== '(Sem telefone)') existing.phoneNumber = phoneNumber;
         if (publicUrl) existing.publicUrl = publicUrl;
         existing.updatedAt = new Date().toISOString();
         skippedDuplicates++;

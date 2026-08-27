@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Lead, CustomTag } from '../types';
-import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Filter, RefreshCw, ChevronDown, Check, X, FileCode } from 'lucide-react';
+import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Filter, RefreshCw, ChevronDown, Check, X, FileCode, Search } from 'lucide-react';
 
 interface CallLogItem {
   id: string;
@@ -14,20 +14,26 @@ interface CallLogItem {
 
 interface MetricsBarProps {
   leads: Lead[];
+  totalLeadsCount?: number;
   tags: CustomTag[];
   selectedSalespersonId?: string;
   selectedTagFilters: string[];
   onTagFilterChange: (tags: string[]) => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
   onShowToast: (msg: string) => void;
   onOpenJsonBatchModal: () => void;
 }
 
 export const MetricsBar: React.FC<MetricsBarProps> = ({
   leads,
+  totalLeadsCount = 0,
   tags,
   selectedSalespersonId = 'ALL',
   selectedTagFilters,
   onTagFilterChange,
+  searchQuery,
+  onSearchChange,
   onShowToast,
   onOpenJsonBatchModal
 }) => {
@@ -233,8 +239,31 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
         </div>
       </div>
 
-      {/* Barra de Filtros por Múltiplas Etiquetas & Exportação CSV */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-100">
+      {/* Barra de Filtros por Múltiplas Etiquetas, Busca Global & Exportação CSV */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-neutral-100">
+        
+        {/* Campo de Busca Global Rápida */}
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Buscar nome, telefone, site Nyroh..."
+            className="w-full text-xs pl-8 pr-7 py-1.5 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-300 rounded-lg text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs transition-all"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onSearchChange('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5 rounded-full"
+              title="Limpar busca"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+
         {/* Menu Dropdown de Seleção Múltipla de Etiquetas */}
         <div className="relative w-full sm:w-auto" ref={dropdownRef}>
           <div className="flex items-center gap-2">
