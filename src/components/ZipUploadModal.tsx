@@ -69,11 +69,12 @@ export const ZipUploadModal: React.FC<ZipUploadModalProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.name.toLowerCase().endsWith('.zip')) {
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.zip') || lower.endsWith('.json')) {
         setSelectedFile(file);
         setImportResult(null);
       } else {
-        onShowToast('Por favor, selecione um arquivo no formato .ZIP');
+        onShowToast('Por favor, selecione um arquivo no formato .ZIP ou .JSON');
       }
     }
   };
@@ -86,11 +87,12 @@ export const ZipUploadModal: React.FC<ZipUploadModalProps> = ({
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      if (file.name.toLowerCase().endsWith('.zip')) {
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.zip') || lower.endsWith('.json')) {
         setSelectedFile(file);
         setImportResult(null);
       } else {
-        onShowToast('Selecione um arquivo .ZIP válido.');
+        onShowToast('Selecione um arquivo .ZIP ou .JSON válido.');
       }
     }
   };
@@ -105,63 +107,94 @@ export const ZipUploadModal: React.FC<ZipUploadModalProps> = ({
 
     setIsUploading(true);
     setImportResult(null);
-    setProgressMessage('Lendo e extraindo arquivo ZIP no seu navegador...');
+    setProgressMessage('Lendo e extraindo arquivo no seu navegador...');
 
     try {
-      const zip = new JSZip();
-      const contents = await zip.loadAsync(selectedFile);
-
       const allItems: any[] = [];
       const errors: string[] = [];
 
-      const entries = Object.entries(contents.files);
-      for (const [relativePath, fileObj] of entries) {
-        const normPath = relativePath.replace(/\\/g, '/');
-        const fileName = normPath.split('/').pop() || '';
+      const isDirectJson = selectedFile.name.toLowerCase().endsWith('.json');
 
-        if (
-          !fileObj.dir &&
-          !normPath.includes('__MACOSX') &&
-          !fileName.startsWith('.') &&
-          !fileName.startsWith('._')
-        ) {
+      if (isDirectJson) {
+        try {
+          const rawContent = await selectedFile.text();
+          const cleanContent = rawContent.replace(/^\uFEFF/, '').trim();
+          let parsed: any;
           try {
-            const rawContent = await fileObj.async('string');
-            const cleanContent = rawContent.replace(/^\uFEFF/, '').trim();
+            parsed = JSON.parse(cleanContent);
+          } catch {
+            const stripped = cleanContent
+              .replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*/g, '$1')
+              .replace(/,\s*([}\]])/g, '$1');
+            parsed = JSON.parse(stripped);
+          }
 
-            const isJsonExt = normPath.toLowerCase().endsWith('.json');
-            const isJsonContent = cleanContent.startsWith('{') || cleanContent.startsWith('[');
+          if (Array.isArray(parsed)) {
+            allItems.push(...parsed);
+          } else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.leads)) allItems.push(...parsed.leads);
+            else if (Array.isArray(parsed.data)) allItems.push(...parsed.data);
+            else if (Array.isArray(parsed.clients)) allItems.push(...parsed.clients);
+            else if (Array.isArray(parsed.items)) allItems.push(...parsed.items);
+            else if (Array.isArray(parsed.results)) allItems.push(...parsed.results);
+            else allItems.push(parsed);
+          }
+        } catch (e: any) {
+          errors.push(`Erro ao ler JSON: ${e.message}`);
+        }
+      } else {
+        const zip = new JSZip();
+        const contents = await zip.loadAsync(selectedFile);
 
-            if (cleanContent && (isJsonExt || isJsonContent)) {
-              let parsed: any;
-              try {
-                parsed = JSON.parse(cleanContent);
-              } catch (err1) {
-                const stripped = cleanContent
-                  .replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*/g, '$1')
-                  .replace(/,\s*([}\]])/g, '$1');
-                parsed = JSON.parse(stripped);
+        const entries = Object.entries(contents.files);
+        for (const [relativePath, fileObj] of entries) {
+          const normPath = relativePath.replace(/\\/g, '/');
+          const fileName = normPath.split('/').pop() || '';
+
+          if (
+            !fileObj.dir &&
+            !normPath.includes('__MACOSX') &&
+            !fileName.startsWith('.') &&
+            !fileName.startsWith('._')
+          ) {
+            try {
+              const rawContent = await fileObj.async('string');
+              const cleanContent = rawContent.replace(/^\uFEFF/, '').trim();
+
+              const isJsonExt = normPath.toLowerCase().endsWith('.json');
+              const isJsonContent = cleanContent.startsWith('{') || cleanContent.startsWith('[');
+
+              if (cleanContent && (isJsonExt || isJsonContent)) {
+                let parsed: any;
+                try {
+                  parsed = JSON.parse(cleanContent);
+                } catch (err1) {
+                  const stripped = cleanContent
+                    .replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*/g, '$1')
+                    .replace(/,\s*([}\]])/g, '$1');
+                  parsed = JSON.parse(stripped);
+                }
+
+                if (Array.isArray(parsed)) {
+                  allItems.push(...parsed);
+                } else if (parsed && typeof parsed === 'object') {
+                  if (Array.isArray(parsed.leads)) allItems.push(...parsed.leads);
+                  else if (Array.isArray(parsed.data)) allItems.push(...parsed.data);
+                  else if (Array.isArray(parsed.clients)) allItems.push(...parsed.clients);
+                  else if (Array.isArray(parsed.items)) allItems.push(...parsed.items);
+                  else if (Array.isArray(parsed.results)) allItems.push(...parsed.results);
+                  else allItems.push(parsed);
+                }
               }
-
-              if (Array.isArray(parsed)) {
-                allItems.push(...parsed);
-              } else if (parsed && typeof parsed === 'object') {
-                if (Array.isArray(parsed.leads)) allItems.push(...parsed.leads);
-                else if (Array.isArray(parsed.data)) allItems.push(...parsed.data);
-                else if (Array.isArray(parsed.clients)) allItems.push(...parsed.clients);
-                else if (Array.isArray(parsed.items)) allItems.push(...parsed.items);
-                else if (Array.isArray(parsed.results)) allItems.push(...parsed.results);
-                else allItems.push(parsed);
-              }
+            } catch (e: any) {
+              errors.push(`Erro ao ler ${normPath}: ${e.message}`);
             }
-          } catch (e: any) {
-            errors.push(`Erro ao ler ${normPath}: ${e.message}`);
           }
         }
       }
 
       if (allItems.length === 0) {
-        onShowToast('Nenhum arquivo JSON com leads foi encontrado dentro deste arquivo ZIP.');
+        onShowToast('Nenhum dado válido de lead foi encontrado no arquivo.');
         setIsUploading(false);
         return;
       }
