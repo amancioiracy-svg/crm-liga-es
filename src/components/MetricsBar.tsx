@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Lead, CustomTag } from '../types';
-import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Filter, RefreshCw, ChevronDown, Check, X, FileCode, Search } from 'lucide-react';
+import { getLeadNiche } from '../lib/niche';
+import { PhoneCall, Clock, TrendingUp, AlertCircle, Download, Tag as TagIcon, Filter, RefreshCw, ChevronDown, Check, X, FileCode, Search, Briefcase } from 'lucide-react';
 
 interface CallLogItem {
   id: string;
@@ -14,11 +15,14 @@ interface CallLogItem {
 
 interface MetricsBarProps {
   leads: Lead[];
+  allLeads?: Lead[];
   totalLeadsCount?: number;
   tags: CustomTag[];
   selectedSalespersonId?: string;
   selectedTagFilters: string[];
   onTagFilterChange: (tags: string[]) => void;
+  selectedNicheFilter?: string;
+  onNicheFilterChange?: (niche: string) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onShowToast: (msg: string) => void;
@@ -27,11 +31,14 @@ interface MetricsBarProps {
 
 export const MetricsBar: React.FC<MetricsBarProps> = ({
   leads,
+  allLeads,
   totalLeadsCount = 0,
   tags,
   selectedSalespersonId = 'ALL',
   selectedTagFilters,
   onTagFilterChange,
+  selectedNicheFilter = 'ALL',
+  onNicheFilterChange,
   searchQuery,
   onSearchChange,
   onShowToast,
@@ -42,6 +49,19 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
   const [exportingCsv, setExportingCsv] = useState(false);
   const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Nichos disponíveis a partir dos leads
+  const targetLeadsForNiches = allLeads || leads;
+  const availableNiches = useMemo(() => {
+    const counts: Record<string, number> = {};
+    targetLeadsForNiches.forEach((l) => {
+      const niche = getLeadNiche(l);
+      counts[niche] = (counts[niche] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([niche, count]) => ({ niche, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [targetLeadsForNiches]);
 
   useEffect(() => {
     fetchCalls();
@@ -258,6 +278,37 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
               onClick={() => onSearchChange('')}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5 rounded-full"
               title="Limpar busca"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+
+        {/* Filtro por Nicho do Lead (Destacado ao lado da busca) */}
+        <div className="flex items-center gap-1.5 bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 shadow-2xs hover:bg-neutral-50 transition-colors">
+          <Briefcase className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <span className="text-xs text-neutral-500 font-medium whitespace-nowrap">Nicho:</span>
+          <select
+            value={selectedNicheFilter}
+            onChange={(e) => onNicheFilterChange?.(e.target.value)}
+            className="bg-transparent text-xs font-semibold text-neutral-800 outline-none cursor-pointer max-w-[150px] truncate"
+            title="Filtrar leads por nicho/segmento"
+          >
+            <option value="ALL">
+              Todos os Nichos ({totalLeadsCount || leads.length})
+            </option>
+            {availableNiches.map(({ niche, count }) => (
+              <option key={niche} value={niche}>
+                {niche} ({count})
+              </option>
+            ))}
+          </select>
+          {selectedNicheFilter !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => onNicheFilterChange?.('ALL')}
+              className="text-neutral-400 hover:text-neutral-700 p-0.5"
+              title="Remover filtro de nicho"
             >
               <X className="w-3 h-3" />
             </button>

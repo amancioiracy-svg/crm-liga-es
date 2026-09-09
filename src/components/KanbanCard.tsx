@@ -4,6 +4,7 @@ import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronR
 import { getWhatsAppUrl, getQrTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
+import { getLeadNiche } from '../lib/niche';
 
 interface KanbanCardProps {
   lead: Lead;
@@ -145,6 +146,11 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
             <h4 className="text-xs font-semibold text-neutral-800 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">
               {lead.name}
             </h4>
+            <div className="mt-1">
+              <span className="inline-block px-1.5 py-0.5 bg-neutral-100 text-neutral-600 rounded text-[9px] font-medium border border-neutral-200/60">
+                {getLeadNiche(lead)}
+              </span>
+            </div>
           </div>
 
           {/* Botão QR Code muito pequeno conforme especificação */}

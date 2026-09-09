@@ -20,6 +20,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<ColumnStatus | null>(null);
   const [activeMobileColumn, setActiveMobileColumn] = useState<ColumnStatus | 'ALL'>('ALL');
+  // Dynamic visible card limits per column for ultra-fast rendering on large datasets
+  const [visibleLimits, setVisibleLimits] = useState<Record<string, number>>({});
+
+  const getColumnLimit = (col: string) => visibleLimits[col] || 35;
+
+  const handleShowMore = (col: string) => {
+    setVisibleLimits((prev) => ({
+      ...prev,
+      [col]: (prev[col] || 35) + 35
+    }));
+  };
+
+  const handleShowAll = (col: string, total: number) => {
+    setVisibleLimits((prev) => ({
+      ...prev,
+      [col]: total
+    }));
+  };
 
   const handleDragStart = (e: React.DragEvent, leadId: string) => {
     e.dataTransfer.setData('text/plain', leadId);
@@ -135,22 +153,56 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       Nenhum lead nesta coluna
                     </div>
                   ) : (
-                    colLeads.map((lead) => (
-                      <div
-                        key={lead.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, lead.id)}
-                        className="cursor-grab active:cursor-grabbing"
-                      >
-                        <KanbanCard
-                          lead={lead}
-                          tags={tags}
-                          onOpenDetails={onOpenDetails}
-                          onMoveColumn={onMoveColumn}
-                          onShowToast={onShowToast}
-                        />
-                      </div>
-                    ))
+                    (() => {
+                      const limit = getColumnLimit(colName);
+                      const visibleCards = colLeads.slice(0, limit);
+                      const hasMore = colLeads.length > limit;
+
+                      return (
+                        <>
+                          {visibleCards.map((lead) => (
+                            <div
+                              key={lead.id}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, lead.id)}
+                              className="cursor-grab active:cursor-grabbing"
+                            >
+                              <KanbanCard
+                                lead={lead}
+                                tags={tags}
+                                onOpenDetails={onOpenDetails}
+                                onMoveColumn={onMoveColumn}
+                                onShowToast={onShowToast}
+                              />
+                            </div>
+                          ))}
+
+                          {hasMore && (
+                            <div className="pt-2 pb-1 flex flex-col items-center gap-1.5 border-t border-neutral-200/60 mt-2">
+                              <span className="text-[10px] text-neutral-500 font-medium">
+                                Mostrando {visibleCards.length} de {colLeads.length} leads
+                              </span>
+                              <div className="flex items-center gap-1.5 w-full">
+                                <button
+                                  type="button"
+                                  onClick={() => handleShowMore(colName)}
+                                  className="flex-1 py-1.5 px-2 bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-700 text-[11px] font-semibold rounded-md shadow-2xs transition-colors"
+                                >
+                                  + Ver mais 35
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleShowAll(colName, colLeads.length)}
+                                  className="py-1.5 px-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[11px] font-medium rounded-md transition-colors"
+                                >
+                                  Ver todos
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()
                   )}
                 </div>
               </div>

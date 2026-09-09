@@ -71,6 +71,7 @@ export interface Lead {
   nextFollowUpAt?: string;
   salespersonId?: string;
   salespersonName?: string;
+  niche?: string;
   calls?: CallLog[];
 }
 

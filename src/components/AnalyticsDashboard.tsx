@@ -16,10 +16,12 @@ import {
   MessageCircle,
   Eye,
   Award,
-  UserCheck
+  UserCheck,
+  Briefcase
 } from 'lucide-react';
 import { getWhatsAppUrl } from '../lib/phone';
 import { getFollowUpInfo } from '../lib/followUp';
+import { getLeadNiche } from '../lib/niche';
 
 interface CallLogItem {
   id: string;
@@ -154,6 +156,21 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         bgColor: tagObj?.bgColor || '#eff6ff'
       };
     })
+    .sort((a, b) => b.count - a.count);
+
+  // 4. Distribuição de Nichos de Mercado
+  const nicheCountsMap: Record<string, number> = {};
+  leads.forEach((l) => {
+    const n = getLeadNiche(l);
+    nicheCountsMap[n] = (nicheCountsMap[n] || 0) + 1;
+  });
+
+  const nicheStats = Object.entries(nicheCountsMap)
+    .map(([name, count]) => ({
+      name,
+      count,
+      pct: totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0
+    }))
     .sort((a, b) => b.count - a.count);
 
   const getColumnBadgeStyle = (col: ColumnStatus) => {
@@ -364,6 +381,43 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Card de Distribuição por Nichos de Mercado */}
+      <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+              <Briefcase className="w-4 h-4 text-amber-600" />
+              Distribuição por Nichos / Segmentos de Mercado
+            </h3>
+            <p className="text-[11px] text-neutral-500">Mapeamento dos leads por ramo de atividade</p>
+          </div>
+          <span className="text-xs font-semibold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">
+            {nicheStats.length} nichos detectados
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {nicheStats.map((n) => (
+            <div key={n.name} className="p-3 rounded-lg border border-neutral-100 bg-neutral-50/50 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-neutral-800 truncate" title={n.name}>
+                  {n.name}
+                </span>
+                <span className="font-mono font-bold text-neutral-900 shrink-0 ml-1">
+                  {n.count} <span className="font-normal text-neutral-400">({n.pct}%)</span>
+                </span>
+              </div>
+              <div className="w-full bg-neutral-200/80 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-amber-500 transition-all duration-500"
+                  style={{ width: `${Math.max(n.pct, n.count > 0 ? 5 : 0)}%` }}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

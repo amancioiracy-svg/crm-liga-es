@@ -3,11 +3,12 @@ import { Lead, CallLog, CustomTag, PIPELINE_COLUMNS, ColumnStatus, Salesperson }
 import { 
   X, Phone, ExternalLink, Calendar, MessageSquare, Plus, CheckCircle2, 
   QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall, PhoneOff,
-  CalendarClock, AlertTriangle, Bell, User, Sparkles, ChevronRight, Zap, History
+  CalendarClock, AlertTriangle, Bell, User, Sparkles, ChevronRight, Zap, History, Briefcase
 } from 'lucide-react';
 import { getWhatsAppUrl, getDialerTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
+import { getLeadNiche } from '../lib/niche';
 
 interface LeadDetailModalProps {
   isOpen: boolean;
@@ -404,6 +405,10 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   </span>
                   <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
                     Etapa: {selectedColumn}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                    <Briefcase className="w-2.5 h-2.5 text-amber-600" />
+                    <span>Nicho: {getLeadNiche(lead)}</span>
                   </span>
                 </div>
 

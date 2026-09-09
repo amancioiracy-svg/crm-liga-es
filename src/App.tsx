@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { Lead, ColumnStatus, CustomTag, Salesperson } from './types';
 import { Sidebar } from './components/Sidebar';
 import { KanbanBoard } from './components/KanbanBoard';
@@ -12,6 +12,7 @@ import { SalesTeamModal } from './components/SalesTeamModal';
 import { WhatsAppSettingsModal } from './components/WhatsAppSettingsModal';
 import { MetricsBar } from './components/MetricsBar';
 import { Toast } from './components/Toast';
+import { getLeadNiche } from './lib/niche';
 import { PhoneCall, Users, CheckCircle, RefreshCw, UserCheck, Share2, Plus, ArrowLeft, ExternalLink } from 'lucide-react';
 import { getSalespersonSlug, matchSalespersonFromRoute } from './lib/salesperson';
 
@@ -22,6 +23,7 @@ export default function App() {
     { id: 'seller-thomas', name: 'Thomas', isDefault: true, color: '#0284c7', bgColor: '#e0f2fe' }
   ]);
   const [selectedSalespersonId, setSelectedSalespersonId] = useState<string>('ALL');
+  const [selectedNicheFilter, setSelectedNicheFilter] = useState<string>('ALL');
   const [routeSalespersonSlug, setRouteSalespersonSlug] = useState<string | null>(null);
   const [loadingLeads, setLoadingLeads] = useState(true);
   const [activeTab, setActiveTab] = useState<'kanban' | 'table' | 'dashboard'>('kanban');
@@ -260,42 +262,54 @@ export default function App() {
     }
   };
 
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
   // Filter leads by selected tags, salesperson AND global search query (Nome, Telefone, Site Nyroh, ID, Tag)
-  const displayedLeads = leads.filter((l) => {
-    // 1. Salesperson filter
-    if (selectedSalespersonId !== 'ALL') {
-      const sellerId = l.salespersonId || 'seller-thomas';
-      if (sellerId !== selectedSalespersonId) return false;
-    }
+  const displayedLeads = useMemo(() => {
+    const cleanSearch = deferredSearchQuery.trim().toLowerCase();
+    const searchDigits = cleanSearch.replace(/\D/g, '');
 
-    // 2. Tag filter
-    if (selectedTagFilters.length > 0) {
-      if (!l.lastCallTag) return false;
-      const lTags = l.lastCallTag.split(',').map((t) => t.trim());
-      const hasTag = selectedTagFilters.some((fTag) => lTags.includes(fTag));
-      if (!hasTag) return false;
-    }
+    return leads.filter((l) => {
+      // 1. Salesperson filter
+      if (selectedSalespersonId !== 'ALL') {
+        const sellerId = l.salespersonId || 'seller-thomas';
+        if (sellerId !== selectedSalespersonId) return false;
+      }
 
-    // 3. Global search filter
-    if (searchQuery.trim()) {
-      const cleanSearch = searchQuery.trim().toLowerCase();
-      const searchDigits = cleanSearch.replace(/\D/g, '');
-      const leadPhoneDigits = (l.phoneNumber || '').replace(/\D/g, '');
+      // 2. Niche filter
+      if (selectedNicheFilter !== 'ALL') {
+        const leadNiche = getLeadNiche(l);
+        if (leadNiche !== selectedNicheFilter) return false;
+      }
 
-      const matches =
-        l.name.toLowerCase().includes(cleanSearch) ||
-        l.phoneNumber.toLowerCase().includes(cleanSearch) ||
-        (searchDigits.length >= 3 && leadPhoneDigits.includes(searchDigits)) ||
-        (l.publicUrl && l.publicUrl.toLowerCase().includes(cleanSearch)) ||
-        l.id.toLowerCase().includes(cleanSearch) ||
-        (l.lastCallTag && l.lastCallTag.toLowerCase().includes(cleanSearch)) ||
-        (l.salespersonName && l.salespersonName.toLowerCase().includes(cleanSearch));
+      // 3. Tag filter
+      if (selectedTagFilters.length > 0) {
+        if (!l.lastCallTag) return false;
+        const lTags = l.lastCallTag.split(',').map((t) => t.trim());
+        const hasTag = selectedTagFilters.some((fTag) => lTags.includes(fTag));
+        if (!hasTag) return false;
+      }
 
-      if (!matches) return false;
-    }
+      // 4. Global search filter
+      if (cleanSearch) {
+        const leadPhoneDigits = (l.phoneNumber || '').replace(/\D/g, '');
 
-    return true;
-  });
+        const matches =
+          l.name.toLowerCase().includes(cleanSearch) ||
+          l.phoneNumber.toLowerCase().includes(cleanSearch) ||
+          (searchDigits.length >= 3 && leadPhoneDigits.includes(searchDigits)) ||
+          (l.publicUrl && l.publicUrl.toLowerCase().includes(cleanSearch)) ||
+          getLeadNiche(l).toLowerCase().includes(cleanSearch) ||
+          l.id.toLowerCase().includes(cleanSearch) ||
+          (l.lastCallTag && l.lastCallTag.toLowerCase().includes(cleanSearch)) ||
+          (l.salespersonName && l.salespersonName.toLowerCase().includes(cleanSearch));
+
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [leads, selectedSalespersonId, selectedNicheFilter, selectedTagFilters, deferredSearchQuery]);
 
   const activeSalesperson = salespeople.find((s) => s.id === selectedSalespersonId);
 
@@ -439,11 +453,14 @@ export default function App() {
         {activeTab !== 'dashboard' && (
           <MetricsBar
             leads={displayedLeads}
+            allLeads={leads}
             totalLeadsCount={leads.length}
             tags={tags}
             selectedSalespersonId={selectedSalespersonId}
             selectedTagFilters={selectedTagFilters}
             onTagFilterChange={(newTags) => setSelectedTagFilters(newTags)}
+            selectedNicheFilter={selectedNicheFilter}
+            onNicheFilterChange={(niche) => setSelectedNicheFilter(niche)}
             searchQuery={searchQuery}
             onSearchChange={(q) => setSearchQuery(q)}
             onShowToast={showToast}

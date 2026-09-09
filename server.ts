@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
@@ -6,9 +7,13 @@ import multer from 'multer';
 import JSZip from 'jszip';
 import pg from 'pg';
 import { Lead, CallLog, ColumnStatus, PIPELINE_COLUMNS, CustomTag, Salesperson, DistributeLeadsParams } from './src/types.js';
+import { getLeadNiche } from './src/lib/niche.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+// Enable HTTP gzip/brotli compression for fast network payloads
+app.use(compression());
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -162,6 +167,15 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           UPDATE leads 
           SET salesperson_id = 'seller-thomas', salesperson_name = 'Thomas'
           WHERE salesperson_id IS NULL OR salesperson_id = '';
+
+          -- Performance Indexes for Railway PostgreSQL
+          CREATE INDEX IF NOT EXISTS idx_leads_salesperson_id ON leads(salesperson_id);
+          CREATE INDEX IF NOT EXISTS idx_leads_column_status ON leads(column_status);
+          CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_leads_next_follow_up ON leads(next_follow_up_at);
+          CREATE INDEX IF NOT EXISTS idx_calls_lead_id ON calls(lead_id);
+          CREATE INDEX IF NOT EXISTS idx_calls_lead_created ON calls(lead_id, created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone_number);
         `);
 
         // Seed default tags if table is empty
@@ -212,7 +226,29 @@ app.get('/api/leads', async (req, res) => {
 
   try {
     if (usePostgres && pgPool) {
-      let query = `
+      let whereClause = '';
+      const params: any[] = [];
+      if (salespersonId && salespersonId !== 'ALL') {
+        params.push(salespersonId);
+        whereClause = ` WHERE l.salesperson_id = $1`;
+      }
+
+      const query = `
+        WITH call_stats AS (
+          SELECT 
+            lead_id,
+            COUNT(*)::int AS call_count,
+            MAX(created_at) AS last_call_at
+          FROM calls
+          GROUP BY lead_id
+        ),
+        latest_calls AS (
+          SELECT DISTINCT ON (lead_id)
+            lead_id,
+            tag AS last_call_tag
+          FROM calls
+          ORDER BY lead_id, created_at DESC
+        )
         SELECT 
           l.id,
           l.name,
@@ -224,23 +260,13 @@ app.get('/api/leads', async (req, res) => {
           l.next_follow_up_at AS "nextFollowUpAt",
           l.created_at AS "createdAt",
           l.updated_at AS "updatedAt",
-          COUNT(c.id)::int AS "callCount",
-          MAX(c.created_at) AS "lastCallAt",
-          (
-            SELECT tag FROM calls 
-            WHERE lead_id = l.id 
-            ORDER BY created_at DESC LIMIT 1
-          ) AS "lastCallTag"
+          COALESCE(cs.call_count, 0)::int AS "callCount",
+          cs.last_call_at AS "lastCallAt",
+          lc.last_call_tag AS "lastCallTag"
         FROM leads l
-        LEFT JOIN calls c ON l.id = c.lead_id
-      `;
-      const params: any[] = [];
-      if (salespersonId && salespersonId !== 'ALL') {
-        params.push(salespersonId);
-        query += ` WHERE l.salesperson_id = $1`;
-      }
-      query += `
-        GROUP BY l.id, l.name, l.phone_number, l.public_url, l.column_status, l.salesperson_id, l.salesperson_name, l.next_follow_up_at, l.created_at, l.updated_at
+        LEFT JOIN call_stats cs ON l.id = cs.lead_id
+        LEFT JOIN latest_calls lc ON l.id = lc.lead_id
+        ${whereClause}
         ORDER BY l.created_at DESC
       `;
 
@@ -902,10 +928,7 @@ async function processLeadItems(items: any[]) {
     const salespersonName = String(data.salespersonName || data.salesperson_name || 'Thomas').trim();
 
     if (usePostgres && pgPool) {
-      const checkRes = await pgPool.query('SELECT id, phone_number, public_url FROM leads WHERE id = $1', [leadId]);
-      const isExisting = checkRes.rows.length > 0;
-
-      await pgPool.query(
+      const upsertRes = await pgPool.query(
         `INSERT INTO leads (id, name, phone_number, public_url, column_status, salesperson_id, salesperson_name)
          VALUES ($1, $2, $3, $4, 'Leads', $5, $6)
          ON CONFLICT (id) DO UPDATE SET
@@ -918,14 +941,15 @@ async function processLeadItems(items: any[]) {
              WHEN EXCLUDED.public_url != '' AND EXCLUDED.public_url IS NOT NULL THEN EXCLUDED.public_url 
              ELSE leads.public_url 
            END,
-           updated_at = CURRENT_TIMESTAMP`,
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING (xmax = 0) AS is_inserted`,
         [leadId, name, phoneNumber, publicUrl, salespersonId, salespersonName]
       );
 
-      if (isExisting) {
-        skippedDuplicates++;
-      } else {
+      if (upsertRes.rows[0]?.is_inserted) {
         insertedCount++;
+      } else {
+        skippedDuplicates++;
       }
     } else {
       if (memoryLeadsMap.has(leadId)) {
@@ -1749,6 +1773,7 @@ app.get('/api/export/csv', async (req, res) => {
     const headers = [
       'ID Lead',
       'Nome do Lead',
+      'Nicho / Segmento',
       'Telefone',
       'URL do Site',
       'Vendedor Responsável',
@@ -1780,9 +1805,11 @@ app.get('/api/export/csv', async (req, res) => {
     const csvLines = [headers.map(escapeCsvField).join(';')];
 
     rows.forEach((r) => {
+      const niche = getLeadNiche({ name: r.lead_name, publicUrl: r.public_url });
       const line = [
         r.lead_id,
         r.lead_name,
+        niche,
         r.phone_number,
         r.public_url,
         r.salesperson_name || 'Thomas',

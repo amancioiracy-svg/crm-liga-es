@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
-import { Search, Phone, ExternalLink, QrCode, Copy, Trash2, Eye, MessageCircle, Check, CalendarClock, AlertTriangle, Clock, FileCode } from 'lucide-react';
+import { Search, Phone, ExternalLink, QrCode, Copy, Trash2, Eye, MessageCircle, Check, CalendarClock, AlertTriangle, Clock, FileCode, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getWhatsAppUrl, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
+import { getLeadNiche } from '../lib/niche';
 
 interface AllLeadsTableProps {
   leads: Lead[];
@@ -28,6 +29,10 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
   const [selectedColumnFilter, setSelectedColumnFilter] = useState<string>('ALL');
   const [selectedFollowUpFilter, setSelectedFollowUpFilter] = useState<string>('ALL');
   const [selectedQrLead, setSelectedQrLead] = useState<Lead | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
+
+  const deferredSearch = useDeferredValue(searchQuery);
 
   const getTagStyle = (tagName: string) => {
     const found = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
@@ -37,23 +42,46 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
     return { color: '#374151', backgroundColor: '#f3f4f6' };
   };
 
-  const filteredLeads = leads.filter((l) => {
-    const matchesSearch = 
-      l.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.phoneNumber.includes(searchQuery) ||
-      (l.publicUrl && l.publicUrl.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredLeads = useMemo(() => {
+    const cleanSearch = deferredSearch.trim().toLowerCase();
 
-    const matchesCol = selectedColumnFilter === 'ALL' || l.columnStatus === selectedColumnFilter;
+    return leads.filter((l) => {
+      const matchesSearch = 
+        !cleanSearch ||
+        l.name.toLowerCase().includes(cleanSearch) ||
+        l.phoneNumber.includes(cleanSearch) ||
+        getLeadNiche(l).toLowerCase().includes(cleanSearch) ||
+        (l.publicUrl && l.publicUrl.toLowerCase().includes(cleanSearch));
 
-    const fInfo = getFollowUpInfo(l.nextFollowUpAt);
-    let matchesFollowUp = true;
-    if (selectedFollowUpFilter === 'OVERDUE') matchesFollowUp = fInfo.status === 'OVERDUE';
-    if (selectedFollowUpFilter === 'TODAY') matchesFollowUp = fInfo.status === 'TODAY';
-    if (selectedFollowUpFilter === 'SCHEDULED') matchesFollowUp = fInfo.status === 'SCHEDULED' || fInfo.status === 'TODAY' || fInfo.status === 'OVERDUE';
-    if (selectedFollowUpFilter === 'NONE') matchesFollowUp = fInfo.status === 'NONE';
+      const matchesCol = selectedColumnFilter === 'ALL' || l.columnStatus === selectedColumnFilter;
 
-    return matchesSearch && matchesCol && matchesFollowUp;
-  });
+      const fInfo = getFollowUpInfo(l.nextFollowUpAt);
+      let matchesFollowUp = true;
+      if (selectedFollowUpFilter === 'OVERDUE') matchesFollowUp = fInfo.status === 'OVERDUE';
+      if (selectedFollowUpFilter === 'TODAY') matchesFollowUp = fInfo.status === 'TODAY';
+      if (selectedFollowUpFilter === 'SCHEDULED') matchesFollowUp = fInfo.status === 'SCHEDULED' || fInfo.status === 'TODAY' || fInfo.status === 'OVERDUE';
+      if (selectedFollowUpFilter === 'NONE') matchesFollowUp = fInfo.status === 'NONE';
+
+      return matchesSearch && matchesCol && matchesFollowUp;
+    });
+  }, [leads, deferredSearch, selectedColumnFilter, selectedFollowUpFilter]);
+
+  // Reset page to 1 when filters or search change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [deferredSearch, selectedColumnFilter, selectedFollowUpFilter, pageSize]);
+
+  const totalPages = pageSize === -1 ? 1 : Math.max(1, Math.ceil(filteredLeads.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+
+  const paginatedLeads = useMemo(() => {
+    if (pageSize === -1) return filteredLeads;
+    const start = (safePage - 1) * pageSize;
+    return filteredLeads.slice(start, start + pageSize);
+  }, [filteredLeads, safePage, pageSize]);
+
+  const startRecord = filteredLeads.length === 0 ? 0 : (safePage - 1) * (pageSize === -1 ? filteredLeads.length : pageSize) + 1;
+  const endRecord = pageSize === -1 ? filteredLeads.length : Math.min(safePage * pageSize, filteredLeads.length);
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -129,6 +157,7 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
           <thead>
             <tr className="border-b border-neutral-200 text-neutral-500 font-medium bg-neutral-50/50">
               <th className="py-2.5 px-3">Nome do Lead</th>
+              <th className="py-2.5 px-3">Nicho</th>
               <th className="py-2.5 px-3">Telefone (Bruto)</th>
               <th className="py-2.5 px-3">URL do Site</th>
               <th className="py-2.5 px-3">Estágio do Pipeline</th>
@@ -141,12 +170,12 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
           <tbody className="divide-y divide-neutral-100 text-neutral-800">
             {filteredLeads.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-8 text-center text-neutral-400 italic">
+                <td colSpan={9} className="py-8 text-center text-neutral-400 italic">
                   Nenhum lead encontrado com os filtros atuais.
                 </td>
               </tr>
             ) : (
-              filteredLeads.map((lead) => {
+              paginatedLeads.map((lead) => {
                 const fInfo = getFollowUpInfo(lead.nextFollowUpAt);
                 return (
                   <tr key={lead.id} className="hover:bg-neutral-50/80 transition-colors">
@@ -159,6 +188,12 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
                       </button>
                       <span className="block text-[10px] font-mono text-neutral-400 font-normal">
                         ID: {lead.id}
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-3">
+                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-neutral-100 text-neutral-700 border border-neutral-200/60">
+                        {getLeadNiche(lead)}
                       </span>
                     </td>
 
@@ -319,6 +354,62 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {filteredLeads.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 mt-3 border-t border-neutral-200 text-xs text-neutral-600">
+          <div className="flex items-center gap-2">
+            <span>
+              Mostrando <strong className="font-semibold text-neutral-900">{startRecord}</strong> a{' '}
+              <strong className="font-semibold text-neutral-900">{endRecord}</strong> de{' '}
+              <strong className="font-semibold text-neutral-900">{filteredLeads.length}</strong> leads
+            </span>
+
+            <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-neutral-200">
+              <span className="text-[11px] text-neutral-500">Por página:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="text-xs bg-neutral-50 border border-neutral-200 rounded px-2 py-1 text-neutral-800 font-medium"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+                <option value={-1}>Todos</option>
+              </select>
+            </div>
+          </div>
+
+          {pageSize !== -1 && totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Anterior</span>
+              </button>
+
+              <span className="px-2 text-xs font-medium text-neutral-700">
+                Página <strong className="font-semibold text-neutral-900">{safePage}</strong> de {totalPages}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+              >
+                <span>Próxima</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {selectedQrLead && (
         <QrCodeModal
