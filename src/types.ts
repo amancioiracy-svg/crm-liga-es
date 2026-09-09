@@ -76,6 +76,27 @@ export interface Lead {
   calls?: CallLog[];
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'manager' | 'salesperson';
+  salespersonId?: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface AuditLog {
+  id: string;
+  userId?: string;
+  userName?: string;
+  userRole?: string;
+  action: string;
+  details?: string;
+  ip?: string;
+  createdAt: string;
+}
+
 export interface ImportResult {
   totalProcessed: number;
   insertedCount: number;

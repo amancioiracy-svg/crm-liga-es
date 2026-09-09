@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight } from 'lucide-react';
-import { Salesperson } from '../types';
+import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight, Shield, LogOut } from 'lucide-react';
+import { Salesperson, User } from '../types';
 import { getSalespersonSlug } from '../lib/salesperson';
 
 interface SidebarProps {
-  activeTab: 'kanban' | 'table' | 'dashboard';
-  setActiveTab: (tab: 'kanban' | 'table' | 'dashboard') => void;
+  activeTab: 'admin' | 'kanban' | 'table' | 'dashboard';
+  setActiveTab: (tab: 'admin' | 'kanban' | 'table' | 'dashboard') => void;
   onOpenZipModal: () => void;
   onOpenTagsModal: () => void;
   onOpenSalesTeamModal: () => void;
@@ -15,6 +15,9 @@ interface SidebarProps {
   salespeopleCount?: number;
   activeSalesperson?: Salesperson;
   onClearSalespersonFilter?: () => void;
+  currentUser?: User | null;
+  onOpenAdminCockpit?: () => void;
+  onLogout?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -28,9 +31,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   totalLeads,
   salespeopleCount = 1,
   activeSalesperson,
-  onClearSalespersonFilter
+  onClearSalespersonFilter,
+  currentUser,
+  onOpenAdminCockpit,
+  onLogout
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isAdmin = currentUser?.role === 'admin';
 
   return (
     <>
@@ -87,6 +94,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
               Navegação
             </span>
 
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab('admin')}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all mb-1 ${
+                  activeTab === 'admin'
+                    ? 'bg-neutral-900 text-white font-bold shadow-xs'
+                    : 'text-amber-950 bg-amber-50 hover:bg-amber-100/80 border border-amber-200/80'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'admin' ? 'text-amber-400' : 'text-amber-600'}`} />
+                  <span className="truncate">Central do Admin</span>
+                </div>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                  activeTab === 'admin' ? 'bg-neutral-800 text-amber-300' : 'bg-amber-200/80 text-amber-900'
+                }`}>
+                  PRO
+                </span>
+              </button>
+            )}
+
             <button
               onClick={() => setActiveTab('kanban')}
               className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -136,22 +164,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Tags & Actions Section */}
           <div className="p-2.5 space-y-1.5 border-t border-neutral-100 mt-1">
             <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-2 py-0.5 block">
-              Ações & Equipe
+              Operação de Vendas
             </span>
 
-            <button
-              onClick={onOpenSalesTeamModal}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
-              title="Gerenciar vendedores e distribuir leads novos"
-            >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="truncate">Equipe & Divisão</span>
-              </div>
-              <span className="text-[10px] bg-blue-200 text-blue-900 px-1.5 py-0.2 rounded-full font-bold">
-                {salespeopleCount}
-              </span>
-            </button>
+            {/* Equipe & Divisão (Only for Admin) */}
+            {isAdmin && (
+              <button
+                onClick={onOpenSalesTeamModal}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                title="Gerenciar vendedores e distribuir leads novos"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="truncate">Equipe & Divisão</span>
+                </div>
+                <span className="text-[10px] bg-blue-200 text-blue-900 px-1.5 py-0.2 rounded-full font-bold">
+                  {salespeopleCount}
+                </span>
+              </button>
+            )}
 
             <button
               onClick={onOpenWhatsAppSettings}
@@ -171,34 +202,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="truncate">Gerenciar Tags</span>
             </button>
 
-            <button
-              onClick={onOpenZipModal}
-              className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors shadow-2xs"
-            >
-              <FileArchive className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-              <span className="truncate">Upload ZIP</span>
-            </button>
+            {/* Upload ZIP & Demo Seeds (Only for Admin) */}
+            {isAdmin && (
+              <>
+                <button
+                  onClick={onOpenZipModal}
+                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors shadow-2xs"
+                >
+                  <FileArchive className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                  <span className="truncate">Upload ZIP</span>
+                </button>
 
-            <button
-              onClick={onSeedSamples}
-              className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors border border-neutral-200"
-              title="Adiciona 5 leads de demonstração para testes rápidos"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span className="truncate">Leads de Exemplo</span>
-            </button>
+                <button
+                  onClick={onSeedSamples}
+                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors border border-neutral-200"
+                  title="Adiciona 5 leads de demonstração para testes rápidos"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="truncate">Leads de Exemplo</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Footer Info */}
-        <div className="p-3 border-t border-neutral-100 text-[10px] text-neutral-400 space-y-0.5">
-          <div className="flex items-center justify-between">
+        {/* Footer Info & Current User Session */}
+        <div className="p-3 border-t border-neutral-100 space-y-2 bg-neutral-50/50">
+          {currentUser && (
+            <div className="flex items-center justify-between gap-1 p-1.5 rounded-xl bg-white border border-neutral-200 shadow-2xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                  isAdmin ? 'bg-amber-100 text-amber-900' : 'bg-blue-100 text-blue-900'
+                }`}>
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-neutral-900 truncate">
+                    {currentUser.name}
+                  </div>
+                  <div className="text-[9px] text-neutral-500 truncate">
+                    {isAdmin ? '👑 Super Admin' : '👤 Vendedor'}
+                  </div>
+                </div>
+              </div>
+
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="p-1.5 text-neutral-400 hover:text-red-600 rounded-lg hover:bg-neutral-100 transition-colors"
+                  title="Encerrar sessão"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between text-[10px] text-neutral-400 pt-0.5">
             <span className="truncate">Railway Ready</span>
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse shrink-0"></span>
           </div>
-          <p className="text-[10px] text-neutral-400 truncate">
-            PostgreSQL Active
-          </p>
         </div>
       </aside>
 
@@ -294,6 +357,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block px-2 mb-1">
                   Navegação Principal
                 </span>
+
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setActiveTab('admin');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-all mb-1 ${
+                      activeTab === 'admin'
+                        ? 'bg-neutral-900 text-white font-bold shadow-xs'
+                        : 'text-amber-950 bg-amber-50 hover:bg-amber-100/80 border border-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Shield className={`w-4 h-4 ${activeTab === 'admin' ? 'text-amber-400' : 'text-amber-600'}`} />
+                      <span>Central do Admin</span>
+                    </div>
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                      activeTab === 'admin' ? 'bg-neutral-800 text-amber-300' : 'bg-amber-200/80 text-amber-900'
+                    }`}>
+                      PRO
+                    </span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
                     setActiveTab('kanban');
@@ -345,24 +433,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               <div className="border-t border-neutral-100 my-4 pt-3 space-y-2">
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block px-2">
-                  Equipe & Ferramentas
+                  Operação de Vendas
                 </span>
 
-                <button
-                  onClick={() => {
-                    onOpenSalesTeamModal();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-semibold text-blue-900 bg-blue-50 border border-blue-200"
-                >
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-blue-600" />
-                    <span>Equipe & Divisão de Leads</span>
-                  </div>
-                  <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full font-bold">
-                    {salespeopleCount}
-                  </span>
-                </button>
+                {/* Equipe & Divisão (Only for Admin) */}
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      onOpenSalesTeamModal();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-semibold text-blue-900 bg-blue-50 border border-blue-200"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-blue-600" />
+                      <span>Equipe & Divisão de Leads</span>
+                    </div>
+                    <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full font-bold">
+                      {salespeopleCount}
+                    </span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {
@@ -386,33 +477,74 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>Gerenciar Etiquetas</span>
                 </button>
 
-                <button
-                  onClick={() => {
-                    onOpenZipModal();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-white bg-neutral-900 shadow-2xs"
-                >
-                  <FileArchive className="w-4 h-4 text-neutral-300" />
-                  <span>Upload de Arquivos ZIP</span>
-                </button>
+                {/* Upload ZIP & Seeds (Only for Admin) */}
+                {isAdmin && (
+                  <>
+                    <button
+                      onClick={() => {
+                        onOpenZipModal();
+                        setMobileMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-semibold text-white bg-neutral-900 shadow-2xs"
+                    >
+                      <FileArchive className="w-4 h-4 text-neutral-300" />
+                      <span>Upload de Arquivos ZIP</span>
+                    </button>
 
-                <button
-                  onClick={() => {
-                    onSeedSamples();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-medium text-neutral-700 bg-neutral-100 border border-neutral-200"
-                >
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  <span>Gerar Leads de Exemplo</span>
-                </button>
+                    <button
+                      onClick={() => {
+                        onSeedSamples();
+                        setMobileMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 p-2.5 rounded-lg text-xs font-medium text-neutral-700 bg-neutral-100 border border-neutral-200"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      <span>Gerar Leads de Exemplo</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
-            <div className="pt-3 border-t border-neutral-100 text-[10px] text-neutral-400 flex items-center justify-between">
-              <span>Mobile Mode Active</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            {/* Mobile User Profile & Logout */}
+            <div className="pt-3 border-t border-neutral-100 space-y-2">
+              {currentUser && (
+                <div className="flex items-center justify-between p-2 rounded-xl bg-neutral-50 border border-neutral-200">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                      isAdmin ? 'bg-amber-100 text-amber-900' : 'bg-blue-100 text-blue-900'
+                    }`}>
+                      {currentUser.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-neutral-900 truncate">
+                        {currentUser.name}
+                      </div>
+                      <div className="text-[10px] text-neutral-500 truncate">
+                        {isAdmin ? '👑 Super Admin' : '👤 Vendedor(a)'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {onLogout && (
+                    <button
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        onLogout();
+                      }}
+                      className="p-1.5 text-neutral-400 hover:text-red-600 rounded-lg hover:bg-neutral-200 transition-colors"
+                      title="Sair da conta"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="text-[10px] text-neutral-400 flex items-center justify-between px-1">
+                <span>Mobile Mode Active</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              </div>
             </div>
           </div>
         </div>

@@ -1,13 +1,15 @@
 import express from 'express';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import multer from 'multer';
 import JSZip from 'jszip';
 import pg from 'pg';
-import { Lead, CallLog, ColumnStatus, PIPELINE_COLUMNS, CustomTag, Salesperson, DistributeLeadsParams } from './src/types.js';
+import { Lead, CallLog, ColumnStatus, PIPELINE_COLUMNS, CustomTag, Salesperson, DistributeLeadsParams, User, AuditLog } from './src/types.js';
 import { getLeadNiche } from './src/lib/niche.js';
+import { hashPassword, verifyPassword, generateSessionToken, DEFAULT_USERS, StoredUser } from './src/lib/serverAuth.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -15,6 +17,7 @@ const PORT = Number(process.env.PORT) || 3000;
 // Enable HTTP gzip/brotli compression for fast network payloads
 app.use(compression());
 
+app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -70,6 +73,21 @@ const memoryTagsMap = new Map<string, CustomTag>(
 const memorySalespeopleMap = new Map<string, Salesperson>([
   [DEFAULT_SALESPERSON.id, DEFAULT_SALESPERSON]
 ]);
+const memoryUsersMap = new Map<string, StoredUser>(
+  DEFAULT_USERS.map(u => [u.id, { ...u }])
+);
+const memorySessionsMap = new Map<string, { userId: string; expiresAt: number }>();
+const memoryAuditLogs: AuditLog[] = [
+  {
+    id: 'log-init-1',
+    userName: 'Sistema',
+    userRole: 'system',
+    action: 'INICIALIZAÇÃO_SISTEMA',
+    details: 'CRM e motor de segurança inicializados com sucesso.',
+    ip: '127.0.0.1',
+    createdAt: new Date().toISOString()
+  }
+];
 
 async function initDatabase(retries = 5, delayMs = 3000) {
   const dbUrl = (
@@ -178,7 +196,55 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           CREATE INDEX IF NOT EXISTS idx_calls_lead_id ON calls(lead_id);
           CREATE INDEX IF NOT EXISTS idx_calls_lead_created ON calls(lead_id, created_at DESC);
           CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone_number);
+
+          -- Security, Users, Roles and Audit Logs
+          CREATE TABLE IF NOT EXISTS users (
+            id VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            password_salt VARCHAR(255) NOT NULL,
+            role VARCHAR(50) NOT NULL DEFAULT 'salesperson',
+            salesperson_id VARCHAR(255),
+            active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE TABLE IF NOT EXISTS audit_logs (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255),
+            user_name VARCHAR(255),
+            user_role VARCHAR(50),
+            action VARCHAR(255) NOT NULL,
+            details TEXT,
+            ip VARCHAR(100),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE TABLE IF NOT EXISTS auth_sessions (
+            token VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+          CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token);
         `);
+
+        // Seed default users if empty
+        const userCountRes = await client.query(`SELECT COUNT(*)::int AS count FROM users`);
+        if (userCountRes.rows[0].count === 0) {
+          for (const u of DEFAULT_USERS) {
+            await client.query(
+              `INSERT INTO users (id, name, email, password_hash, password_salt, role, salesperson_id, active, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               ON CONFLICT (email) DO NOTHING`,
+              [u.id, u.name, u.email, u.passwordHash, u.passwordSalt, u.role, u.salespersonId || null, u.active, u.createdAt]
+            );
+          }
+        }
 
         // Seed default tags if table is empty
         const tagCountRes = await client.query(`SELECT COUNT(*)::int AS count FROM custom_tags`);
@@ -220,11 +286,392 @@ app.get(['/health', '/api/health', '/healthz', '/ping'], (req, res) => {
   });
 });
 
+// Helper: Grava registro de auditoria no PostgreSQL ou na memória
+async function logAudit(action: string, details?: string, req?: express.Request) {
+  const ip = req ? (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || '127.0.0.1') : '127.0.0.1';
+  const anyReq = req as any;
+  const user = anyReq?.user;
+  const logId = `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const timestamp = new Date().toISOString();
+
+  const auditEntry: AuditLog = {
+    id: logId,
+    userId: user?.id,
+    userName: user?.name || 'Anônimo / Visitante',
+    userRole: user?.role || 'guest',
+    action,
+    details: details || '',
+    ip,
+    createdAt: timestamp
+  };
+
+  if (usePostgres && pgPool) {
+    try {
+      await pgPool.query(
+        `INSERT INTO audit_logs (id, user_id, user_name, user_role, action, details, ip, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
+        [logId, auditEntry.userId || null, auditEntry.userName, auditEntry.userRole, action, details || '', ip]
+      );
+    } catch (e) {
+      console.error('Erro ao gravar log de auditoria no Postgres:', e);
+    }
+  } else {
+    memoryAuditLogs.unshift(auditEntry);
+    if (memoryAuditLogs.length > 500) memoryAuditLogs.pop();
+  }
+}
+
+// Middleware de autenticação por Cookie HttpOnly ou Header Bearer
+app.use(async (req: any, res, next) => {
+  const token = req.cookies?.crm_session || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!token) {
+    req.user = null;
+    return next();
+  }
+
+  try {
+    if (usePostgres && pgPool) {
+      const sessionRes = await pgPool.query(
+        `SELECT s.user_id, s.expires_at, u.id, u.name, u.email, u.role, u.salesperson_id AS "salespersonId", u.active
+         FROM auth_sessions s
+         JOIN users u ON u.id = s.user_id
+         WHERE s.token = $1 AND s.expires_at > CURRENT_TIMESTAMP AND u.active = TRUE`,
+        [token]
+      );
+
+      if (sessionRes.rows.length > 0) {
+        req.user = sessionRes.rows[0];
+      } else {
+        req.user = null;
+      }
+    } else {
+      const session = memorySessionsMap.get(token);
+      if (session && session.expiresAt > Date.now()) {
+        const user = memoryUsersMap.get(session.userId);
+        if (user && user.active) {
+          req.user = {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            salespersonId: user.salespersonId,
+            active: user.active
+          };
+        } else {
+          req.user = null;
+        }
+      } else {
+        req.user = null;
+      }
+    }
+  } catch (err) {
+    console.error('Erro na autenticação de sessão:', err);
+    req.user = null;
+  }
+
+  next();
+});
+
+// AUTH ENDPOINTS
+
+// 1. Login
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
+  }
+
+  const cleanEmail = String(email).trim().toLowerCase();
+  const rawPass = String(password);
+
+  try {
+    let foundUser: any = null;
+
+    if (usePostgres && pgPool) {
+      const uRes = await pgPool.query(
+        `SELECT id, name, email, password_hash AS "passwordHash", password_salt AS "passwordSalt", role, salesperson_id AS "salespersonId", active
+         FROM users
+         WHERE LOWER(email) = $1`,
+        [cleanEmail]
+      );
+      if (uRes.rows.length > 0) {
+        foundUser = uRes.rows[0];
+      }
+    } else {
+      for (const u of memoryUsersMap.values()) {
+        if (u.email.toLowerCase() === cleanEmail) {
+          foundUser = u;
+          break;
+        }
+      }
+    }
+
+    if (!foundUser) {
+      await logAudit('LOGIN_FALHOU', `Tentativa com e-mail inexistente: ${cleanEmail}`, req);
+      return res.status(401).json({ error: 'Credenciais inválidas. Verifique seu e-mail e senha.' });
+    }
+
+    if (!foundUser.active) {
+      await logAudit('LOGIN_BLOQUEADO', `Usuário inativo tentou login: ${cleanEmail}`, req);
+      return res.status(403).json({ error: 'Sua conta de acesso foi desativada pelo administrador.' });
+    }
+
+    const isValid = verifyPassword(rawPass, foundUser.passwordHash, foundUser.passwordSalt);
+    if (!isValid) {
+      await logAudit('LOGIN_SENHA_INCORRETA', `Senha incorreta para ${cleanEmail}`, req);
+      return res.status(401).json({ error: 'Credenciais inválidas. Senha incorreta.' });
+    }
+
+    // Cria token seguro de 64 caracteres
+    const token = generateSessionToken();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 dias
+
+    if (usePostgres && pgPool) {
+      await pgPool.query(
+        `INSERT INTO auth_sessions (token, user_id, expires_at)
+         VALUES ($1, $2, $3)`,
+        [token, foundUser.id, expiresAt]
+      );
+    } else {
+      memorySessionsMap.set(token, { userId: foundUser.id, expiresAt: expiresAt.getTime() });
+    }
+
+    // Cookie seguro HttpOnly
+    res.cookie('crm_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/'
+    });
+
+    const publicUserData: User = {
+      id: foundUser.id,
+      name: foundUser.name,
+      email: foundUser.email,
+      role: foundUser.role,
+      salespersonId: foundUser.salespersonId,
+      active: foundUser.active,
+      createdAt: foundUser.createdAt || new Date().toISOString()
+    };
+
+    (req as any).user = publicUserData;
+    await logAudit('LOGIN_SUCESSO', `Usuário ${foundUser.name} (${foundUser.role}) logou com sucesso.`, req);
+
+    return res.json({
+      user: publicUserData,
+      token
+    });
+  } catch (err: any) {
+    console.error('Erro no login:', err);
+    res.status(500).json({ error: 'Erro interno ao realizar autenticação.' });
+  }
+});
+
+// 2. Logout
+app.post('/api/auth/logout', async (req, res) => {
+  const token = req.cookies?.crm_session || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (token) {
+    if (usePostgres && pgPool) {
+      await pgPool.query(`DELETE FROM auth_sessions WHERE token = $1`, [token]).catch(() => {});
+    } else {
+      memorySessionsMap.delete(token);
+    }
+  }
+
+  await logAudit('LOGOUT', 'Usuário encerrou sessão.', req);
+  res.clearCookie('crm_session', { path: '/' });
+  return res.json({ success: true, message: 'Sessão encerrada com sucesso.' });
+});
+
+// 3. Me (Current User)
+app.get('/api/auth/me', (req: any, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Não autenticado' });
+  }
+  return res.json({ user: req.user });
+});
+
+// ADMIN ENDPOINTS
+
+// 4. Listar Todos os Usuários
+app.get('/api/admin/users', async (req: any, res) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
+  }
+
+  try {
+    if (usePostgres && pgPool) {
+      const result = await pgPool.query(
+        `SELECT id, name, email, role, salesperson_id AS "salespersonId", active, created_at AS "createdAt"
+         FROM users
+         ORDER BY created_at ASC`
+      );
+      return res.json(result.rows);
+    } else {
+      const list = Array.from(memoryUsersMap.values()).map(u => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        salespersonId: u.salespersonId,
+        active: u.active,
+        createdAt: u.createdAt
+      }));
+      return res.json(list);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro ao buscar lista de usuários.' });
+  }
+});
+
+// 5. Criar Novo Usuário
+app.post('/api/admin/users', async (req: any, res) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
+  }
+
+  const { name, email, password, role, salespersonId } = req.body;
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
+  }
+
+  const cleanEmail = String(email).trim().toLowerCase();
+  const userRole = role === 'admin' || role === 'manager' ? role : 'salesperson';
+  const creds = hashPassword(String(password));
+  const newId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+
+  try {
+    if (usePostgres && pgPool) {
+      const existing = await pgPool.query(`SELECT id FROM users WHERE LOWER(email) = $1`, [cleanEmail]);
+      if (existing.rows.length > 0) {
+        return res.status(400).json({ error: 'Já existe um usuário cadastrado com este e-mail.' });
+      }
+
+      await pgPool.query(
+        `INSERT INTO users (id, name, email, password_hash, password_salt, role, salesperson_id, active, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, CURRENT_TIMESTAMP)`,
+        [newId, String(name).trim(), cleanEmail, creds.hash, creds.salt, userRole, salespersonId || null]
+      );
+    } else {
+      for (const u of memoryUsersMap.values()) {
+        if (u.email.toLowerCase() === cleanEmail) {
+          return res.status(400).json({ error: 'Já existe um usuário cadastrado com este e-mail.' });
+        }
+      }
+      memoryUsersMap.set(newId, {
+        id: newId,
+        name: String(name).trim(),
+        email: cleanEmail,
+        passwordHash: creds.hash,
+        passwordSalt: creds.salt,
+        role: userRole,
+        salespersonId: salespersonId || undefined,
+        active: true,
+        createdAt: now
+      });
+    }
+
+    await logAudit('USUARIO_CRIADO', `Admin criou usuário ${name} (${cleanEmail}) como ${userRole}`, req);
+
+    return res.status(201).json({
+      id: newId,
+      name: String(name).trim(),
+      email: cleanEmail,
+      role: userRole,
+      salespersonId,
+      active: true,
+      createdAt: now
+    });
+  } catch (err: any) {
+    console.error('Erro ao criar usuário:', err);
+    res.status(500).json({ error: 'Erro ao cadastrar novo usuário.' });
+  }
+});
+
+// 6. Atualizar Usuário (Ativar/Desativar ou Resetar Senha)
+app.patch('/api/admin/users/:id', async (req: any, res) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
+  }
+
+  const { id } = req.params;
+  const { name, role, salespersonId, active, newPassword } = req.body;
+
+  try {
+    if (usePostgres && pgPool) {
+      if (typeof active === 'boolean') {
+        await pgPool.query(`UPDATE users SET active = $1 WHERE id = $2`, [active, id]);
+      }
+      if (name) {
+        await pgPool.query(`UPDATE users SET name = $1 WHERE id = $2`, [String(name).trim(), id]);
+      }
+      if (role) {
+        await pgPool.query(`UPDATE users SET role = $1 WHERE id = $2`, [role, id]);
+      }
+      if (salespersonId !== undefined) {
+        await pgPool.query(`UPDATE users SET salesperson_id = $1 WHERE id = $2`, [salespersonId || null, id]);
+      }
+      if (newPassword) {
+        const creds = hashPassword(String(newPassword));
+        await pgPool.query(`UPDATE users SET password_hash = $1, password_salt = $2 WHERE id = $3`, [creds.hash, creds.salt, id]);
+      }
+    } else {
+      const u = memoryUsersMap.get(id);
+      if (u) {
+        if (typeof active === 'boolean') u.active = active;
+        if (name) u.name = String(name).trim();
+        if (role) u.role = role;
+        if (salespersonId !== undefined) u.salespersonId = salespersonId || undefined;
+        if (newPassword) {
+          const creds = hashPassword(String(newPassword));
+          u.passwordHash = creds.hash;
+          u.passwordSalt = creds.salt;
+        }
+      }
+    }
+
+    await logAudit('USUARIO_ATUALIZADO', `Admin alterou dados/permissão do usuário ID ${id}`, req);
+    return res.json({ success: true, message: 'Usuário atualizado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro ao atualizar dados do usuário.' });
+  }
+});
+
+// 7. Audit Logs
+app.get('/api/admin/audit-logs', async (req: any, res) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
+  }
+
+  try {
+    if (usePostgres && pgPool) {
+      const result = await pgPool.query(
+        `SELECT id, user_id AS "userId", user_name AS "userName", user_role AS "userRole", action, details, ip, created_at AS "createdAt"
+         FROM audit_logs
+         ORDER BY created_at DESC
+         LIMIT 100`
+      );
+      return res.json(result.rows);
+    } else {
+      return res.json(memoryAuditLogs.slice(0, 100));
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro ao buscar logs de auditoria.' });
+  }
+});
+
 // API ROUTES
 
 // 1. Get all leads with call stats & salesperson info (optionally filtered by salesperson)
-app.get('/api/leads', async (req, res) => {
-  const { salespersonId } = req.query;
+app.get('/api/leads', async (req: any, res) => {
+  let { salespersonId } = req.query;
+
+  // Isolamento estrito de carteira: Vendedor só enxerga os seus próprios leads
+  if (req.user && req.user.role === 'salesperson' && req.user.salespersonId) {
+    salespersonId = req.user.salespersonId;
+  }
 
   try {
     if (usePostgres && pgPool) {
@@ -1643,9 +2090,10 @@ app.post('/api/leads/:id/calls', async (req, res) => {
 });
 
 // 6. Delete a lead
-app.delete('/api/leads/:id', async (req, res) => {
+app.delete('/api/leads/:id', async (req: any, res) => {
   const { id } = req.params;
   try {
+    await logAudit('EXCLUIR_LEAD', `Excluiu lead ID: ${id}`, req);
     if (usePostgres && pgPool) {
       await pgPool.query(`DELETE FROM leads WHERE id = $1`, [id]);
       return res.json({ success: true });
@@ -1713,8 +2161,15 @@ app.get('/api/calls', async (req, res) => {
   }
 });
 
-// CSV Export Endpoint
-app.get('/api/export/csv', async (req, res) => {
+// CSV Export Endpoint (Apenas Administradores / Gestores)
+app.get('/api/export/csv', async (req: any, res) => {
+  if (req.user && req.user.role === 'salesperson') {
+    await logAudit('TENTATIVA_EXPORT_BLOQUEADA', 'Vendedor tentou exportar CSV da base.', req);
+    return res.status(403).json({ error: 'Acesso negado. Apenas o administrador pode exportar a base de dados.' });
+  }
+
+  await logAudit('EXPORTAR_CSV', 'Exportação de relatório CSV com histórico completo de chamadas', req);
+
   try {
     let rows: any[] = [];
     if (usePostgres && pgPool) {
