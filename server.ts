@@ -149,6 +149,8 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS next_follow_up_at TIMESTAMP WITH TIME ZONE;
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS salesperson_id VARCHAR(255) DEFAULT 'seller-thomas';
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS salesperson_name VARCHAR(255) DEFAULT 'Thomas';
+          ALTER TABLE leads ADD COLUMN IF NOT EXISTS niche VARCHAR(255);
+          ALTER TABLE leads ADD COLUMN IF NOT EXISTS categories TEXT;
 
           CREATE TABLE IF NOT EXISTS custom_tags (
             id VARCHAR(255) PRIMARY KEY,
@@ -257,6 +259,8 @@ app.get('/api/leads', async (req, res) => {
           COALESCE(l.column_status, 'Leads') AS "columnStatus",
           COALESCE(l.salesperson_id, 'seller-thomas') AS "salespersonId",
           COALESCE(l.salesperson_name, 'Thomas') AS "salespersonName",
+          l.niche AS "niche",
+          l.categories AS "categories",
           l.next_follow_up_at AS "nextFollowUpAt",
           l.created_at AS "createdAt",
           l.updated_at AS "updatedAt",
@@ -927,10 +931,14 @@ async function processLeadItems(items: any[]) {
     const salespersonId = String(data.salespersonId || data.salesperson_id || 'seller-thomas').trim();
     const salespersonName = String(data.salespersonName || data.salesperson_name || 'Thomas').trim();
 
+    const rawCategories = data.categories || data.types || data.category || data.type || '';
+    const categoriesStr = Array.isArray(rawCategories) ? rawCategories.join(', ') : String(rawCategories || '');
+    const niche = getLeadNiche(data);
+
     if (usePostgres && pgPool) {
       const upsertRes = await pgPool.query(
-        `INSERT INTO leads (id, name, phone_number, public_url, column_status, salesperson_id, salesperson_name)
-         VALUES ($1, $2, $3, $4, 'Leads', $5, $6)
+        `INSERT INTO leads (id, name, phone_number, public_url, column_status, salesperson_id, salesperson_name, niche, categories)
+         VALUES ($1, $2, $3, $4, 'Leads', $5, $6, $7, $8)
          ON CONFLICT (id) DO UPDATE SET
            name = CASE WHEN EXCLUDED.name != 'Lead sem nome' AND EXCLUDED.name != '' THEN EXCLUDED.name ELSE leads.name END,
            phone_number = CASE 
@@ -941,9 +949,11 @@ async function processLeadItems(items: any[]) {
              WHEN EXCLUDED.public_url != '' AND EXCLUDED.public_url IS NOT NULL THEN EXCLUDED.public_url 
              ELSE leads.public_url 
            END,
+           niche = CASE WHEN EXCLUDED.niche != '' AND EXCLUDED.niche IS NOT NULL THEN EXCLUDED.niche ELSE leads.niche END,
+           categories = CASE WHEN EXCLUDED.categories != '' AND EXCLUDED.categories IS NOT NULL THEN EXCLUDED.categories ELSE leads.categories END,
            updated_at = CURRENT_TIMESTAMP
          RETURNING (xmax = 0) AS is_inserted`,
-        [leadId, name, phoneNumber, publicUrl, salespersonId, salespersonName]
+        [leadId, name, phoneNumber, publicUrl, salespersonId, salespersonName, niche, categoriesStr]
       );
 
       if (upsertRes.rows[0]?.is_inserted) {
@@ -957,6 +967,8 @@ async function processLeadItems(items: any[]) {
         if (name && name !== 'Lead sem nome') existing.name = name;
         if (phoneNumber && phoneNumber !== '(Sem telefone)') existing.phoneNumber = phoneNumber;
         if (publicUrl) existing.publicUrl = publicUrl;
+        if (niche) existing.niche = niche;
+        if (categoriesStr) existing.categories = categoriesStr;
         existing.updatedAt = new Date().toISOString();
         skippedDuplicates++;
       } else {
@@ -968,6 +980,8 @@ async function processLeadItems(items: any[]) {
           columnStatus: 'Leads',
           salespersonId,
           salespersonName,
+          niche,
+          categories: categoriesStr,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           callCount: 0

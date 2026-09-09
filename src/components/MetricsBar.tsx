@@ -291,7 +291,7 @@ export const MetricsBar: React.FC<MetricsBarProps> = ({
           <select
             value={selectedNicheFilter}
             onChange={(e) => onNicheFilterChange?.(e.target.value)}
-            className="bg-transparent text-xs font-semibold text-neutral-800 outline-none cursor-pointer max-w-[150px] truncate"
+            className="bg-transparent text-xs font-semibold text-neutral-800 outline-none cursor-pointer max-w-[180px] sm:max-w-[240px] truncate"
             title="Filtrar leads por nicho/segmento"
           >
             <option value="ALL">

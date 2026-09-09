@@ -72,6 +72,7 @@ export interface Lead {
   salespersonId?: string;
   salespersonName?: string;
   niche?: string;
+  categories?: string | string[];
   calls?: CallLog[];
 }
 
