@@ -10,18 +10,15 @@ interface BulkCreateSalespeopleModalProps {
 
 const EXAMPLE_JSON = `[
   {
-    "name": "Mariana Souza",
-    "email": "mariana@empresa.com",
+    "name": "Adriana",
     "phone": "(31) 99888-7766"
   },
   {
-    "name": "Carlos Eduardo",
-    "email": "carlos@empresa.com",
+    "name": "Tatiana Castro",
     "phone": "(31) 98765-4321"
   },
   {
-    "name": "Fernanda Lima",
-    "email": "fernanda@empresa.com",
+    "name": "Bruno Luiz",
     "phone": "(11) 99123-4567"
   }
 ]`;
@@ -255,9 +252,17 @@ export const BulkCreateSalespeopleModal: React.FC<BulkCreateSalespeopleModalProp
             </div>
           )}
 
-          <p className="text-[11px] text-neutral-500 leading-normal">
-            💡 <strong>Dica:</strong> Cores e avatares visuais serão atribuídos automaticamente para cada vendedor de maneira alternada. Você também pode incluir campos opcionais como <code>email</code> e <code>phone</code>.
-          </p>
+          <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-blue-900 text-xs space-y-1">
+            <p className="font-semibold flex items-center gap-1.5 text-blue-800">
+              <span>🔐</span>
+              <span>Geração Automática de Acessos & Logins:</span>
+            </p>
+            <p className="text-[11px] text-blue-700 leading-relaxed">
+              Para cada vendedor cadastrado, o sistema cria automaticamente o login com o primeiro nome: 
+              <strong className="font-mono text-blue-900"> primeironome@nyroh.com</strong> e senha inicial padrão 
+              <strong className="font-mono text-blue-900"> primeironome123</strong>. O vendedor poderá alterar a senha a qualquer momento!
+            </p>
+          </div>
         </div>
 
         {/* Footer */}

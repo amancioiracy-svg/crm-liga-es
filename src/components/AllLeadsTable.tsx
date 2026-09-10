@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
 import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
-import { Search, Phone, ExternalLink, QrCode, Copy, Trash2, Eye, MessageCircle, Check, CalendarClock, AlertTriangle, Clock, FileCode, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Phone, ExternalLink, QrCode, Copy, Trash2, Eye, MessageCircle, Check, CalendarClock, AlertTriangle, Clock, FileCode, ChevronLeft, ChevronRight, CheckSquare, Square, MinusSquare } from 'lucide-react';
 import { getWhatsAppUrl, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
@@ -12,6 +12,7 @@ interface AllLeadsTableProps {
   onOpenDetails: (lead: Lead) => void;
   onUpdateColumn: (leadId: string, newColumn: ColumnStatus) => void;
   onDeleteLead: (leadId: string) => void;
+  onBulkDeleteLeads?: (leadIds: string[]) => Promise<void> | void;
   onShowToast: (msg: string) => void;
   onOpenJsonBatchModal?: () => void;
 }
@@ -22,6 +23,7 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
   onOpenDetails,
   onUpdateColumn,
   onDeleteLead,
+  onBulkDeleteLeads,
   onShowToast,
   onOpenJsonBatchModal
 }) => {
@@ -31,6 +33,8 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
   const [selectedQrLead, setSelectedQrLead] = useState<Lead | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(50);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
 
   const deferredSearch = useDeferredValue(searchQuery);
 
@@ -82,6 +86,49 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
 
   const startRecord = filteredLeads.length === 0 ? 0 : (safePage - 1) * (pageSize === -1 ? filteredLeads.length : pageSize) + 1;
   const endRecord = pageSize === -1 ? filteredLeads.length : Math.min(safePage * pageSize, filteredLeads.length);
+
+  const isAllPageSelected = paginatedLeads.length > 0 && paginatedLeads.every((l) => selectedLeadIds.includes(l.id));
+  const isSomePageSelected = paginatedLeads.some((l) => selectedLeadIds.includes(l.id)) && !isAllPageSelected;
+
+  const handleToggleSelectPage = () => {
+    if (isAllPageSelected) {
+      const pageIds = new Set(paginatedLeads.map((l) => l.id));
+      setSelectedLeadIds(selectedLeadIds.filter((id) => !pageIds.has(id)));
+    } else {
+      const newSet = new Set(selectedLeadIds);
+      paginatedLeads.forEach((l) => newSet.add(l.id));
+      setSelectedLeadIds(Array.from(newSet));
+    }
+  };
+
+  const handleToggleSelectOne = (id: string) => {
+    if (selectedLeadIds.includes(id)) {
+      setSelectedLeadIds(selectedLeadIds.filter((i) => i !== id));
+    } else {
+      setSelectedLeadIds([...selectedLeadIds, id]);
+    }
+  };
+
+  const handleSelectAllFiltered = () => {
+    setSelectedLeadIds(filteredLeads.map((l) => l.id));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedLeadIds([]);
+  };
+
+  const handleExecuteBulkDelete = async () => {
+    if (selectedLeadIds.length === 0) return;
+    if (onBulkDeleteLeads) {
+      setIsDeletingBulk(true);
+      try {
+        await onBulkDeleteLeads(selectedLeadIds);
+        setSelectedLeadIds([]);
+      } finally {
+        setIsDeletingBulk(false);
+      }
+    }
+  };
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -151,11 +198,65 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
         </div>
       </div>
 
+      {/* Bulk Selection Bar */}
+      {selectedLeadIds.length > 0 && (
+        <div className="mb-3 p-3 bg-neutral-900 text-white rounded-xl shadow-md flex items-center justify-between gap-3 flex-wrap animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-bold bg-neutral-800 text-amber-400 px-2.5 py-1 rounded-lg border border-neutral-700">
+              {selectedLeadIds.length} lead(s) selecionado(s)
+            </span>
+            {selectedLeadIds.length < filteredLeads.length && (
+              <button
+                type="button"
+                onClick={handleSelectAllFiltered}
+                className="text-xs text-blue-300 hover:text-blue-200 underline font-medium"
+              >
+                Selecionar todos os {filteredLeads.length} leads filtrados
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium transition-colors"
+            >
+              Limpar Seleção
+            </button>
+
+            {onBulkDeleteLeads && (
+              <button
+                type="button"
+                onClick={handleExecuteBulkDelete}
+                disabled={isDeletingBulk}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-colors disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeletingBulk ? 'Excluindo...' : `Excluir ${selectedLeadIds.length} Leads`}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="border-b border-neutral-200 text-neutral-500 font-medium bg-neutral-50/50">
+              <th className="py-2.5 px-3 w-10 text-center">
+                <input
+                  type="checkbox"
+                  checked={isAllPageSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = isSomePageSelected;
+                  }}
+                  onChange={handleToggleSelectPage}
+                  className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  title="Selecionar todos da página atual"
+                />
+              </th>
               <th className="py-2.5 px-3">Nome do Lead</th>
               <th className="py-2.5 px-3">Nicho</th>
               <th className="py-2.5 px-3">Telefone (Bruto)</th>
@@ -170,15 +271,27 @@ export const AllLeadsTable: React.FC<AllLeadsTableProps> = ({
           <tbody className="divide-y divide-neutral-100 text-neutral-800">
             {filteredLeads.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-8 text-center text-neutral-400 italic">
+                <td colSpan={10} className="py-8 text-center text-neutral-400 italic">
                   Nenhum lead encontrado com os filtros atuais.
                 </td>
               </tr>
             ) : (
               paginatedLeads.map((lead) => {
                 const fInfo = getFollowUpInfo(lead.nextFollowUpAt);
+                const isSelected = selectedLeadIds.includes(lead.id);
                 return (
-                  <tr key={lead.id} className="hover:bg-neutral-50/80 transition-colors">
+                  <tr 
+                    key={lead.id} 
+                    className={`hover:bg-neutral-50/80 transition-colors ${isSelected ? 'bg-blue-50/40' : ''}`}
+                  >
+                    <td className="py-3 px-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleToggleSelectOne(lead.id)}
+                        className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="py-3 px-3 font-semibold text-neutral-900">
                       <button
                         onClick={() => onOpenDetails(lead)}

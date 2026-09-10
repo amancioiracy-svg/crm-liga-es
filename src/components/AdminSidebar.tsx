@@ -10,7 +10,8 @@ import {
   Layers,
   LogOut,
   ChevronRight,
-  Shield
+  Shield,
+  KeyRound
 } from 'lucide-react';
 
 export type AdminViewSection = 
@@ -31,6 +32,7 @@ interface AdminSidebarProps {
   totalLeadsCount: number;
   isKanbanActive?: boolean;
   onNavigateToKanban: () => void;
+  onOpenChangePassword?: () => void;
   onLogout: () => void;
 }
 
@@ -44,6 +46,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   totalLeadsCount,
   isKanbanActive = false,
   onNavigateToKanban,
+  onOpenChangePassword,
   onLogout
 }) => {
   return (
@@ -258,13 +261,25 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onLogout}
-            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-            title="Sair do sistema"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {onOpenChangePassword && (
+              <button
+                onClick={onOpenChangePassword}
+                className="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors shrink-0"
+                title="Alterar minha senha"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            <button
+              onClick={onLogout}
+              className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+              title="Sair do sistema"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </aside>

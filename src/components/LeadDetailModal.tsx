@@ -4,7 +4,7 @@ import {
   X, Phone, ExternalLink, Calendar, MessageSquare, Plus, CheckCircle2, 
   QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall, PhoneOff,
   CalendarClock, AlertTriangle, Bell, User, Sparkles, ChevronRight, Zap, History, Briefcase,
-  Inbox, Star, Trophy, XCircle
+  Inbox, Star, Trophy, XCircle, Trash2
 } from 'lucide-react';
 import { getWhatsAppUrl, getDialerTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
@@ -30,6 +30,7 @@ interface LeadDetailModalProps {
   onAddCallLog: (leadId: string, tag: string, comment: string, durationSeconds?: number, followUpAt?: string) => Promise<void>;
   onUpdateColumn: (leadId: string, newColumn: ColumnStatus) => Promise<void>;
   onReassignLead?: (leadId: string, salespersonId: string, salespersonName: string) => Promise<void>;
+  onDeleteLead?: (leadId: string) => Promise<void> | void;
   onShowToast: (msg: string) => void;
 }
 
@@ -56,6 +57,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onAddCallLog,
   onUpdateColumn,
   onReassignLead,
+  onDeleteLead,
   onShowToast
 }) => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -431,15 +433,35 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 </h2>
               </div>
 
-              {/* Close Button */}
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors shrink-0"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              {/* Action Buttons */}
+              <div className="flex items-center gap-1 shrink-0">
+                {onDeleteLead && (
+                  <button
+                    type="button"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Tem certeza que deseja excluir o lead "${lead.name}" da base de dados?`)) {
+                        await onDeleteLead(lead.id);
+                        onClose();
+                      }
+                    }}
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    title="Excluir este Lead da base"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+                  aria-label="Fechar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Direct Quick Action Bar (Discar, WhatsApp, Site da Nyroh) */}

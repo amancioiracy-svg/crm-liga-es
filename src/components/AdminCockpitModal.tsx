@@ -43,6 +43,7 @@ export const AdminCockpitModal: React.FC<AdminCockpitModalProps> = ({
   const [resetUserId, setResetUserId] = useState<string | null>(null);
   const [resetPasswordVal, setResetPasswordVal] = useState('');
   const [resettingPass, setResettingPass] = useState(false);
+  const [syncingCreds, setSyncingCreds] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -175,6 +176,44 @@ export const AdminCockpitModal: React.FC<AdminCockpitModalProps> = ({
     }
   };
 
+  const handleDeleteUser = async (u: User) => {
+    if (u.id === currentUser.id) {
+      onShowToast('Você não pode excluir seu próprio usuário logado.');
+      return;
+    }
+    if (!window.confirm(`Tem certeza que deseja excluir o usuário "${u.name}" (${u.email})?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/users/${u.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao excluir usuário.');
+      onShowToast(`Usuário ${u.name} excluído com sucesso!`);
+      fetchUsers();
+      fetchAuditLogs();
+    } catch (err: any) {
+      onShowToast(err.message || 'Erro ao excluir usuário.');
+    }
+  };
+
+  const handleSyncCredentials = async () => {
+    setSyncingCreds(true);
+    try {
+      const res = await fetch('/api/admin/sync-credentials', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao sincronizar credenciais.');
+      onShowToast(data.message || 'Credenciais de vendedores sincronizadas com sucesso!');
+      fetchUsers();
+      fetchAuditLogs();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      onShowToast(err.message || 'Erro ao sincronizar credenciais.');
+    } finally {
+      setSyncingCreds(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -281,7 +320,16 @@ export const AdminCockpitModal: React.FC<AdminCockpitModalProps> = ({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={handleSyncCredentials}
+                    disabled={syncingCreds}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-300 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold shadow-2xs transition-colors"
+                    title="Gera automaticamente logins (@nyroh.com) e senhas padrão para os vendedores que ainda não tiverem conta"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${syncingCreds ? 'animate-spin' : ''}`} />
+                    <span>Sincronizar Logins da Equipe</span>
+                  </button>
                   <button
                     onClick={fetchUsers}
                     className="p-1.5 text-neutral-500 hover:text-neutral-900 rounded-lg border border-neutral-200"
@@ -366,17 +414,29 @@ export const AdminCockpitModal: React.FC<AdminCockpitModalProps> = ({
                             </button>
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            <button
-                              onClick={() => {
-                                setResetUserId(u.id);
-                                setResetPasswordVal('');
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg border border-neutral-200 transition-colors"
-                              title="Redefinir senha de acesso deste usuário"
-                            >
-                              <KeyRound className="w-3 h-3 text-neutral-500" />
-                              <span>Senha</span>
-                            </button>
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              <button
+                                onClick={() => {
+                                  setResetUserId(u.id);
+                                  setResetPasswordVal('');
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg border border-neutral-200 transition-colors"
+                                title="Redefinir senha de acesso deste usuário"
+                              >
+                                <KeyRound className="w-3 h-3 text-neutral-500" />
+                                <span>Senha</span>
+                              </button>
+
+                              {u.id !== currentUser.id && (
+                                <button
+                                  onClick={() => handleDeleteUser(u)}
+                                  className="p-1 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Excluir usuário"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

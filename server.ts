@@ -62,6 +62,22 @@ const DEFAULT_SALESPERSON: Salesperson = {
   createdAt: new Date().toISOString()
 };
 
+// Helper: Gera login (@nyroh.com) e senha inicial (nome123) padronizados
+export function getSalespersonCredentials(name: string, customEmail?: string) {
+  const firstName = name
+    .trim()
+    .split(/\s+/)[0]
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '') || 'vendedor';
+
+  const defaultEmail = `${firstName}@nyroh.com`;
+  const finalEmail = (customEmail && customEmail.trim() ? customEmail.trim() : defaultEmail).toLowerCase();
+  const defaultPassword = `${firstName}123`;
+  return { firstName, email: finalEmail, defaultPassword };
+}
+
 // Database Connection setup
 let pgPool: pg.Pool | null = null;
 let usePostgres = false;
@@ -282,6 +298,7 @@ async function initDatabase(retries = 5, delayMs = 3000) {
         pgPool = pool;
         usePostgres = true;
         console.log('✅ PostgreSQL conectado com sucesso e tabelas verificadas.');
+        await syncSalespeopleUsers();
         return;
       } catch (err: any) {
         console.warn(`⚠️ Tentativa de conexão ao PostgreSQL falhou com SSL ${JSON.stringify(sslConfig)}:`, err.message);
@@ -295,6 +312,70 @@ async function initDatabase(retries = 5, delayMs = 3000) {
 
   console.warn('⚠️ Todas as tentativas de conexão ao PostgreSQL falharam. Operando em modo in-memory.');
   usePostgres = false;
+  await syncSalespeopleUsers();
+}
+
+// Sincroniza e garante contas de login para todos os vendedores existentes
+async function syncSalespeopleUsers() {
+  try {
+    if (usePostgres && pgPool) {
+      const sellersRes = await pgPool.query(`SELECT id, name, email, slug FROM salespeople`);
+      for (const seller of sellersRes.rows) {
+        if (seller.id === 'seller-thomas') continue;
+        const creds = getSalespersonCredentials(seller.name, seller.email);
+        const checkUser = await pgPool.query(
+          `SELECT id FROM users WHERE salesperson_id = $1 OR LOWER(email) = $2`,
+          [seller.id, creds.email]
+        );
+        if (checkUser.rowCount === 0) {
+          const pass = hashPassword(creds.defaultPassword);
+          const userId = `user-${seller.id}`;
+          await pgPool.query(
+            `INSERT INTO users (id, name, email, password_hash, password_salt, role, salesperson_id, active, created_at)
+             VALUES ($1, $2, $3, $4, $5, 'salesperson', $6, TRUE, CURRENT_TIMESTAMP)
+             ON CONFLICT (id) DO NOTHING`,
+            [userId, seller.name, creds.email, pass.hash, pass.salt, seller.id]
+          );
+          if (!seller.email) {
+            await pgPool.query(`UPDATE salespeople SET email = $1 WHERE id = $2`, [creds.email, seller.id]);
+          }
+        }
+      }
+    } else {
+      for (const seller of memorySalespeopleMap.values()) {
+        if (seller.id === 'seller-thomas') continue;
+        const creds = getSalespersonCredentials(seller.name, seller.email);
+        let exists = false;
+        for (const u of memoryUsersMap.values()) {
+          if (u.salespersonId === seller.id || u.email.toLowerCase() === creds.email) {
+            exists = true;
+            break;
+          }
+        }
+        if (!exists) {
+          const pass = hashPassword(creds.defaultPassword);
+          const userId = `user-${seller.id}`;
+          memoryUsersMap.set(userId, {
+            id: userId,
+            name: seller.name,
+            email: creds.email,
+            passwordHash: pass.hash,
+            passwordSalt: pass.salt,
+            role: 'salesperson',
+            salespersonId: seller.id,
+            active: true,
+            createdAt: new Date().toISOString()
+          });
+          if (!seller.email) {
+            seller.email = creds.email;
+          }
+        }
+      }
+    }
+    console.log('✅ Sincronização de credenciais de vendedores (@nyroh.com / senha padrão) concluída.');
+  } catch (err) {
+    console.error('Erro ao sincronizar credenciais de vendedores:', err);
+  }
 }
 
 // HEALTHCHECK ROUTE (Fast response for Railway & Docker health checks)
@@ -513,6 +594,57 @@ app.get('/api/auth/me', (req: any, res) => {
   return res.json({ user: req.user });
 });
 
+// 3.1 Alterar a própria senha (qualquer usuário autenticado)
+app.post('/api/auth/change-password', async (req: any, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Você precisa estar autenticado para alterar sua senha.' });
+  }
+
+  const { newPassword } = req.body;
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 4) {
+    return res.status(400).json({ error: 'A nova senha deve ter pelo menos 4 caracteres.' });
+  }
+
+  const cleanPass = newPassword.trim();
+  const creds = hashPassword(cleanPass);
+  const userId = req.user.id;
+
+  try {
+    if (usePostgres && pgPool) {
+      await pgPool.query(
+        `UPDATE users SET password_hash = $1, password_salt = $2 WHERE id = $3`,
+        [creds.hash, creds.salt, userId]
+      );
+    } else {
+      const u = memoryUsersMap.get(userId);
+      if (u) {
+        u.passwordHash = creds.hash;
+        u.passwordSalt = creds.salt;
+      }
+    }
+
+    await logAudit('SENHA_ALTERADA', `Usuário ${req.user.name} (${req.user.email}) alterou sua própria senha.`, req);
+    return res.json({ success: true, message: 'Sua senha foi alterada com sucesso!' });
+  } catch (error: any) {
+    console.error('Erro ao alterar senha:', error);
+    return res.status(500).json({ error: 'Erro ao processar alteração de senha.' });
+  }
+});
+
+// 3.2 Sincronizar credenciais de todos os vendedores manualmente
+app.post('/api/admin/sync-credentials', async (req: any, res) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
+  }
+  try {
+    await syncSalespeopleUsers();
+    await logAudit('SINCRONIZAR_CREDENCIAIS', 'Admin executou sincronização geral de contas de login de vendedores.', req);
+    return res.json({ success: true, message: 'Contas e acessos de todos os vendedores foram sincronizados com sucesso!' });
+  } catch (error: any) {
+    return res.status(500).json({ error: 'Erro ao sincronizar credenciais.' });
+  }
+});
+
 // ADMIN ENDPOINTS
 
 // 4. Listar Todos os Usuários
@@ -657,6 +789,41 @@ app.patch('/api/admin/users/:id', async (req: any, res) => {
     return res.json({ success: true, message: 'Usuário atualizado com sucesso.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Erro ao atualizar dados do usuário.' });
+  }
+});
+
+// 6.1 Excluir Usuário de Acesso
+app.delete('/api/admin/users/:id', async (req: any, res) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
+  }
+  const { id } = req.params;
+
+  if (id === req.user.id) {
+    return res.status(400).json({ error: 'Você não pode excluir seu próprio usuário logado.' });
+  }
+
+  try {
+    if (usePostgres && pgPool) {
+      const uRes = await pgPool.query('SELECT name, email, role FROM users WHERE id = $1', [id]);
+      if (uRes.rowCount === 0) {
+        return res.status(404).json({ error: 'Usuário não encontrado.' });
+      }
+      await pgPool.query(`DELETE FROM users WHERE id = $1`, [id]);
+      await logAudit('USUARIO_EXCLUIDO', `Admin excluiu o usuário ${uRes.rows[0].name} (${uRes.rows[0].email})`, req);
+    } else {
+      const u = memoryUsersMap.get(id);
+      if (!u) {
+        return res.status(404).json({ error: 'Usuário não encontrado.' });
+      }
+      memoryUsersMap.delete(id);
+      await logAudit('USUARIO_EXCLUIDO', `Admin excluiu o usuário ${u.name} (${u.email})`, req);
+    }
+
+    return res.json({ success: true, message: 'Usuário excluído com sucesso.' });
+  } catch (err: any) {
+    console.error('Erro ao excluir usuário:', err);
+    return res.status(500).json({ error: 'Erro ao excluir usuário.' });
   }
 });
 
@@ -924,25 +1091,41 @@ app.post('/api/salespeople', async (req, res) => {
   const sellerId = `seller-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const sellerColor = color || '#0284c7';
   const sellerBgColor = bgColor || '#e0f2fe';
-  const sellerEmail = email ? email.trim() : '';
+  const creds = getSalespersonCredentials(nameTrim, email);
+  const sellerEmail = creds.email;
   const sellerPhone = phone ? phone.trim() : '';
   const createdAt = new Date().toISOString();
+  const cleanSlug = nameTrim.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const hashedPass = hashPassword(creds.defaultPassword);
+  const userId = `user-${sellerId}`;
 
   try {
     if (usePostgres && pgPool) {
       const result = await pgPool.query(
-        `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, CURRENT_TIMESTAMP)
-         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", created_at AS "createdAt"`,
-        [sellerId, nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor]
+        `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, slug, active, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, TRUE, CURRENT_TIMESTAMP)
+         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", slug, active, created_at AS "createdAt"`,
+        [sellerId, nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor, cleanSlug]
       );
+
+      // Auto-cria conta de acesso de login do vendedor
+      await pgPool.query(
+        `INSERT INTO users (id, name, email, password_hash, password_salt, role, salesperson_id, active, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'salesperson', $6, TRUE, CURRENT_TIMESTAMP)
+         ON CONFLICT (email) DO UPDATE
+         SET name = $2, salesperson_id = $6, active = TRUE`,
+        [userId, nameTrim, sellerEmail, hashedPass.hash, hashedPass.salt, sellerId]
+      );
+
       return res.status(201).json({
         ...result.rows[0],
         totalLeads: 0,
         uncontactedLeads: 0,
         inProgressLeads: 0,
         closedLeads: 0,
-        refusedLeads: 0
+        refusedLeads: 0,
+        loginEmail: sellerEmail,
+        initialPassword: creds.defaultPassword
       });
     } else {
       const newSeller: Salesperson = {
@@ -953,16 +1136,33 @@ app.post('/api/salespeople', async (req, res) => {
         color: sellerColor,
         bgColor: sellerBgColor,
         isDefault: false,
+        slug: cleanSlug,
+        active: true,
         createdAt
       };
       memorySalespeopleMap.set(sellerId, newSeller);
+
+      memoryUsersMap.set(userId, {
+        id: userId,
+        name: nameTrim,
+        email: sellerEmail,
+        passwordHash: hashedPass.hash,
+        passwordSalt: hashedPass.salt,
+        role: 'salesperson',
+        salespersonId: sellerId,
+        active: true,
+        createdAt
+      });
+
       return res.status(201).json({
         ...newSeller,
         totalLeads: 0,
         uncontactedLeads: 0,
         inProgressLeads: 0,
         closedLeads: 0,
-        refusedLeads: 0
+        refusedLeads: 0,
+        loginEmail: sellerEmail,
+        initialPassword: creds.defaultPassword
       });
     }
   } catch (error: any) {
@@ -1000,7 +1200,7 @@ app.post('/api/salespeople/batch', async (req, res) => {
     for (let i = 0; i < items.length; i++) {
       const raw = items[i];
       let sellerName = '';
-      let sellerEmail = '';
+      let rawEmail = '';
       let sellerPhone = '';
       let sellerColor = '';
       let sellerBgColor = '';
@@ -1009,7 +1209,7 @@ app.post('/api/salespeople/batch', async (req, res) => {
         sellerName = raw.trim();
       } else if (raw && typeof raw === 'object') {
         sellerName = String(raw.name || raw.nome || raw.fullName || '').trim();
-        sellerEmail = String(raw.email || raw.mail || '').trim();
+        rawEmail = String(raw.email || raw.mail || '').trim();
         sellerPhone = String(raw.phone || raw.telefone || raw.whatsapp || raw.celular || '').trim();
         sellerColor = String(raw.color || raw.cor || '').trim();
         sellerBgColor = String(raw.bgColor || raw.corFundo || '').trim();
@@ -1023,6 +1223,12 @@ app.post('/api/salespeople/batch', async (req, res) => {
       const sellerId = `seller-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`;
       const cleanSlug = sellerName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+      // Gera e-mail padrão @nyroh.com e senha padrão nome123
+      const creds = getSalespersonCredentials(sellerName, rawEmail);
+      const sellerEmail = creds.email;
+      const hashedPass = hashPassword(creds.defaultPassword);
+      const userId = `user-${sellerId}`;
+
       if (usePostgres && pgPool) {
         const result = await pgPool.query(
           `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, slug, active, created_at)
@@ -1030,13 +1236,25 @@ app.post('/api/salespeople/batch', async (req, res) => {
            RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", slug, active, created_at AS "createdAt"`,
           [sellerId, sellerName, sellerEmail, sellerPhone, finalColor, finalBgColor, cleanSlug]
         );
+
+        // Auto-cria conta de login para este vendedor
+        await pgPool.query(
+          `INSERT INTO users (id, name, email, password_hash, password_salt, role, salesperson_id, active, created_at)
+           VALUES ($1, $2, $3, $4, $5, 'salesperson', $6, TRUE, CURRENT_TIMESTAMP)
+           ON CONFLICT (email) DO UPDATE
+           SET name = $2, password_hash = $4, password_salt = $5, salesperson_id = $6, active = TRUE`,
+          [userId, sellerName, sellerEmail, hashedPass.hash, hashedPass.salt, sellerId]
+        );
+
         createdList.push({
           ...result.rows[0],
           totalLeads: 0,
           uncontactedLeads: 0,
           inProgressLeads: 0,
           closedLeads: 0,
-          refusedLeads: 0
+          refusedLeads: 0,
+          loginEmail: sellerEmail,
+          initialPassword: creds.defaultPassword
         });
       } else {
         const newSeller: Salesperson = {
@@ -1052,13 +1270,28 @@ app.post('/api/salespeople/batch', async (req, res) => {
           createdAt: now
         };
         memorySalespeopleMap.set(sellerId, newSeller);
+
+        memoryUsersMap.set(userId, {
+          id: userId,
+          name: sellerName,
+          email: sellerEmail,
+          passwordHash: hashedPass.hash,
+          passwordSalt: hashedPass.salt,
+          role: 'salesperson',
+          salespersonId: sellerId,
+          active: true,
+          createdAt: now
+        });
+
         createdList.push({
           ...newSeller,
           totalLeads: 0,
           uncontactedLeads: 0,
           inProgressLeads: 0,
           closedLeads: 0,
-          refusedLeads: 0
+          refusedLeads: 0,
+          loginEmail: sellerEmail,
+          initialPassword: creds.defaultPassword
         });
       }
     }
@@ -1071,7 +1304,7 @@ app.post('/api/salespeople/batch', async (req, res) => {
       success: true,
       count: createdList.length,
       salespeople: createdList,
-      message: `${createdList.length} vendedor(es) cadastrado(s) com sucesso!`
+      message: `${createdList.length} vendedor(es) cadastrado(s) com logins @nyroh.com e senhas gerados com sucesso!`
     });
   } catch (error: any) {
     console.error('Error in batch salespeople creation:', error);
@@ -1112,8 +1345,15 @@ app.put('/api/salespeople/:id', async (req, res) => {
       // Update salesperson_name in leads table
       await pgPool.query(`UPDATE leads SET salesperson_name = $1 WHERE salesperson_id = $2`, [nameTrim, id]);
 
-      // Sync active state and name with users table if a user exists
-      await pgPool.query(`UPDATE users SET active = $1, name = $2 WHERE salesperson_id = $3`, [sellerActive, nameTrim, id]);
+      // Sync active state, name, and email with users table if a user exists
+      if (sellerEmail) {
+        await pgPool.query(
+          `UPDATE users SET active = $1, name = $2, email = $3 WHERE salesperson_id = $4`,
+          [sellerActive, nameTrim, sellerEmail.toLowerCase(), id]
+        );
+      } else {
+        await pgPool.query(`UPDATE users SET active = $1, name = $2 WHERE salesperson_id = $3`, [sellerActive, nameTrim, id]);
+      }
 
       return res.json(result.rows[0]);
     } else {
@@ -1142,6 +1382,7 @@ app.put('/api/salespeople/:id', async (req, res) => {
         if (u.salespersonId === id) {
           u.active = sellerActive;
           u.name = nameTrim;
+          if (sellerEmail) u.email = sellerEmail.toLowerCase();
         }
       }
 
@@ -1190,9 +1431,9 @@ app.post('/api/salespeople/:id/reset-password', async (req: any, res) => {
         });
       } else {
         // Create user account for this closer
-        const cleanSlug = seller.slug || id.replace('seller-', '');
-        const email = seller.email || `${cleanSlug}@empresa.com`;
-        const newUserId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const credsInfo = getSalespersonCredentials(seller.name, seller.email);
+        const email = credsInfo.email;
+        const newUserId = `user-${id}`;
         await pgPool.query(
           `INSERT INTO users (id, name, email, password_hash, password_salt, role, salesperson_id, active, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
@@ -1226,13 +1467,13 @@ app.post('/api/salespeople/:id/reset-password', async (req: any, res) => {
           message: `Senha de ${seller.name} atualizada com sucesso!`
         });
       } else {
-        const cleanSlug = seller.slug || id.replace('seller-', '');
-        const email = (seller.email || `${cleanSlug}@empresa.com`).toLowerCase();
-        const newUserId = `user-${Date.now()}`;
+        const credsInfo = getSalespersonCredentials(seller.name, seller.email);
+        const email = credsInfo.email;
+        const newUserId = `user-${id}`;
         memoryUsersMap.set(newUserId, {
           id: newUserId,
           name: seller.name,
-          email,
+          email: email.toLowerCase(),
           passwordHash: creds.hash,
           passwordSalt: creds.salt,
           role: 'salesperson',
@@ -1242,13 +1483,13 @@ app.post('/api/salespeople/:id/reset-password', async (req: any, res) => {
         });
         return res.json({
           success: true,
-          email,
+          email: email.toLowerCase(),
           message: `Credencial criada com sucesso para ${seller.name}!`
         });
       }
     }
-  } catch (err: any) {
-    console.error('Erro ao redefinir senha do vendedor:', err);
+  } catch (error: any) {
+    console.error('Error resetting password for salesperson:', error);
     res.status(500).json({ error: 'Erro ao redefinir senha do vendedor.' });
   }
 });
@@ -1372,9 +1613,12 @@ app.delete('/api/salespeople/:id', async (req: any, res) => {
         `UPDATE leads SET salesperson_id = 'seller-thomas', salesperson_name = 'Thomas' WHERE salesperson_id = $1`,
         [id]
       );
+      // Delete associated user login
+      await pgPool.query(`DELETE FROM users WHERE salesperson_id = $1`, [id]);
       // Delete salesperson
       await pgPool.query(`DELETE FROM salespeople WHERE id = $1`, [id]);
-      return res.json({ success: true, message: 'Vendedor excluído e seus leads foram transferidos para Thomas.' });
+      await logAudit('VENDEDOR_EXCLUIDO', `Excluiu vendedor ID ${id} e removeu suas credenciais de login`, req);
+      return res.json({ success: true, message: 'Vendedor e sua conta de acesso foram excluídos, e seus leads foram transferidos para Thomas.' });
     } else {
       for (const lead of memoryLeadsMap.values()) {
         if (lead.salespersonId === id) {
@@ -1382,8 +1626,14 @@ app.delete('/api/salespeople/:id', async (req: any, res) => {
           lead.salespersonName = 'Thomas';
         }
       }
+      for (const [uid, u] of memoryUsersMap.entries()) {
+        if (u.salespersonId === id) {
+          memoryUsersMap.delete(uid);
+        }
+      }
       memorySalespeopleMap.delete(id);
-      return res.json({ success: true, message: 'Vendedor excluído e seus leads foram transferidos para Thomas.' });
+      await logAudit('VENDEDOR_EXCLUIDO', `Excluiu vendedor ID ${id} e removeu suas credenciais de login`, req);
+      return res.json({ success: true, message: 'Vendedor e sua conta de acesso foram excluídos, e seus leads foram transferidos para Thomas.' });
     }
   } catch (error) {
     console.error('Error deleting salesperson:', error);
@@ -2472,6 +2722,31 @@ app.delete('/api/leads/:id', async (req: any, res) => {
   } catch (error) {
     console.error('Error deleting lead:', error);
     res.status(500).json({ error: 'Erro ao excluir lead.' });
+  }
+});
+
+// 6.1 Bulk Delete Leads
+app.post('/api/leads/bulk-delete', async (req: any, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Nenhum lead selecionado para exclusão.' });
+  }
+
+  try {
+    await logAudit('EXCLUIR_LEADS_LOTE', `Excluiu ${ids.length} leads em lote`, req);
+    if (usePostgres && pgPool) {
+      await pgPool.query(`DELETE FROM leads WHERE id = ANY($1::varchar[])`, [ids]);
+      return res.json({ success: true, count: ids.length, message: `${ids.length} lead(s) excluído(s) com sucesso!` });
+    } else {
+      for (const id of ids) {
+        memoryLeadsMap.delete(id);
+        memoryCallLogsMap.delete(id);
+      }
+      return res.json({ success: true, count: ids.length, message: `${ids.length} lead(s) excluído(s) com sucesso!` });
+    }
+  } catch (error: any) {
+    console.error('Error bulk deleting leads:', error);
+    res.status(500).json({ error: 'Erro ao excluir leads em lote.' });
   }
 });
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight, Shield, LogOut } from 'lucide-react';
+import { LayoutGrid, Table, FileArchive, Sparkles, Tag, BarChart3, Menu, X, Users, MessageSquare, UserCheck, ChevronRight, Shield, LogOut, KeyRound } from 'lucide-react';
 import { Salesperson, User } from '../types';
 import { getSalespersonSlug } from '../lib/salesperson';
 
@@ -17,6 +17,7 @@ interface SidebarProps {
   onClearSalespersonFilter?: () => void;
   currentUser?: User | null;
   onOpenAdminCockpit?: () => void;
+  onOpenChangePassword?: () => void;
   onLogout?: () => void;
 }
 
@@ -34,6 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClearSalespersonFilter,
   currentUser,
   onOpenAdminCockpit,
+  onOpenChangePassword,
   onLogout
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -235,15 +237,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               </div>
 
-              {onLogout && (
-                <button
-                  onClick={onLogout}
-                  className="p-1.5 text-neutral-400 hover:text-red-600 rounded-lg hover:bg-neutral-100 transition-colors"
-                  title="Encerrar sessão"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <div className="flex items-center gap-0.5 shrink-0">
+                {onOpenChangePassword && (
+                  <button
+                    onClick={onOpenChangePassword}
+                    className="p-1.5 text-neutral-400 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 transition-colors"
+                    title="Alterar minha senha"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                {onLogout && (
+                  <button
+                    onClick={onLogout}
+                    className="p-1.5 text-neutral-400 hover:text-red-600 rounded-lg hover:bg-neutral-100 transition-colors"
+                    title="Encerrar sessão"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -515,18 +529,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </div>
 
-                  {onLogout && (
-                    <button
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        onLogout();
-                      }}
-                      className="p-1.5 text-neutral-400 hover:text-red-600 rounded-lg hover:bg-neutral-200 transition-colors"
-                      title="Sair da conta"
-                    >
-                      <LogOut className="w-4 h-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {onOpenChangePassword && (
+                      <button
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          onOpenChangePassword();
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-neutral-900 rounded-lg hover:bg-neutral-200 transition-colors"
+                        title="Alterar minha senha"
+                      >
+                        <KeyRound className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {onLogout && (
+                      <button
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          onLogout();
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-red-600 rounded-lg hover:bg-neutral-200 transition-colors"
+                        title="Sair da conta"
+                      >
+                        <LogOut className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 

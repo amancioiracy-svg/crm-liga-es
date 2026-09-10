@@ -18,6 +18,7 @@ import { AdminSellerInspectionView } from './components/AdminSellerInspectionVie
 import { AdminCarteirasView } from './components/AdminCarteirasView';
 import { MetricsBar } from './components/MetricsBar';
 import { Toast } from './components/Toast';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { getLeadNiche } from './lib/niche';
 import { PhoneCall, Users, CheckCircle, RefreshCw, UserCheck, Share2, Plus, ArrowLeft, ExternalLink, Shield, LogOut, Lock } from 'lucide-react';
 import { getSalespersonSlug, matchSalespersonFromRoute } from './lib/salesperson';
@@ -50,6 +51,7 @@ export default function App() {
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
   const [isSalesTeamModalOpen, setIsSalesTeamModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Parse salesperson route from URL (e.g. /v/thomas or /v/seller-thomas or /vendedor/thomas)
@@ -326,6 +328,28 @@ export default function App() {
     }
   };
 
+  // Excluir Leads em Lote
+  const handleBulkDeleteLeads = async (leadIds: string[]) => {
+    if (leadIds.length === 0) return;
+    if (!window.confirm(`Tem certeza que deseja excluir ${leadIds.length} lead(s) selecionado(s) da base? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/leads/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: leadIds })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao excluir leads em lote.');
+      setLeads((prev) => prev.filter((l) => !leadIds.includes(l.id)));
+      showToast(data.message || `${leadIds.length} leads excluídos com sucesso!`);
+      fetchSalespeople();
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao excluir leads em lote.');
+    }
+  };
+
   // Semear leads de exemplo para teste rápido
   const handleSeedSamples = async () => {
     try {
@@ -458,6 +482,7 @@ export default function App() {
           totalLeadsCount={leads.length}
           isKanbanActive={activeTab === 'kanban'}
           onNavigateToKanban={() => setActiveTab('kanban')}
+          onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
           onLogout={handleLogout}
         />
       ) : (
@@ -475,6 +500,7 @@ export default function App() {
           onClearSalespersonFilter={() => handleNavigateToSalesperson('ALL')}
           currentUser={currentUser}
           onOpenAdminCockpit={() => setIsAdminCockpitOpen(true)}
+          onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
           onLogout={handleLogout}
         />
       )}
@@ -754,6 +780,7 @@ export default function App() {
                   onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
                   onUpdateColumn={handleUpdateLeadColumn}
                   onDeleteLead={handleDeleteLead}
+                  onBulkDeleteLeads={handleBulkDeleteLeads}
                   onShowToast={showToast}
                   onOpenJsonBatchModal={() => setIsJsonModalOpen(true)}
                 />
@@ -787,6 +814,7 @@ export default function App() {
         onAddCallLog={handleAddCallLog}
         onUpdateColumn={handleUpdateLeadColumn}
         onReassignLead={handleReassignLead}
+        onDeleteLead={handleDeleteLead}
         onShowToast={showToast}
       />
 
@@ -851,6 +879,14 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Change Password Modal for Current User */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setIsChangePasswordModalOpen(false)}
+        currentUser={currentUser}
+        onShowToast={showToast}
+      />
 
       {/* Global Toast Notification */}
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
