@@ -497,7 +497,10 @@ export default function App() {
           activeSalesperson={activeSalesperson}
           onClearSalespersonFilter={() => handleNavigateToSalesperson('ALL')}
           currentUser={currentUser}
-          onOpenAdminCockpit={() => setIsAdminCockpitOpen(true)}
+          onOpenAdminCockpit={() => {
+            setActiveTab('admin');
+            setAdminSection('cockpit');
+          }}
           onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
           onLogout={handleLogout}
         />
@@ -507,27 +510,7 @@ export default function App() {
       <main className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden">
         {activeTab === 'admin' && currentUser?.role === 'admin' ? (
           <>
-            {adminSection === 'carteiras' ? (
-              <AdminCarteirasView
-                salespeople={salespeople}
-                leads={leads}
-                onOpenCreateSellerModal={() => setIsSalesTeamModalOpen(true)}
-                onNavigateToKanban={(sellerId) => {
-                  if (sellerId) setSelectedSalespersonId(sellerId);
-                  setActiveTab('kanban');
-                }}
-                onInspectSeller={(sellerId) => {
-                  setInspectedSellerId(sellerId);
-                  setAdminSection('vendedores');
-                  setActiveTab('admin');
-                }}
-                onRefreshData={() => {
-                  fetchLeads();
-                  fetchSalespeople();
-                }}
-                onShowToast={showToast}
-              />
-            ) : adminSection === 'vendedores' ? (
+            {adminSection === 'vendedores' ? (
               <AdminSellerInspectionView
                 salespersonId={inspectedSellerId}
                 salespeople={salespeople}
@@ -549,7 +532,15 @@ export default function App() {
                 currentUser={currentUser}
                 salespeople={salespeople}
                 leads={leads}
-                activeSection={adminSection}
+                activeSection={
+                  adminSection === 'cockpit' ||
+                  adminSection === 'usuarios' ||
+                  adminSection === 'carteiras' ||
+                  adminSection === 'auditoria' ||
+                  adminSection === 'blindagem'
+                    ? adminSection
+                    : 'cockpit'
+                }
                 onChangeSection={(sec) => setAdminSection(sec as AdminViewSection)}
                 onSelectSalesperson={(id) => {
                   setInspectedSellerId(id);
@@ -861,22 +852,6 @@ export default function App() {
         }}
         onShowToast={showToast}
       />
-
-      {/* Admin Cockpit Modal (RBAC, Audit, User Management) */}
-      {isAdmin && (
-        <AdminCockpitModal
-          isOpen={isAdminCockpitOpen}
-          onClose={() => setIsAdminCockpitOpen(false)}
-          currentUser={currentUser}
-          salespeople={salespeople}
-          leads={leads}
-          onShowToast={showToast}
-          onRefreshData={() => {
-            fetchLeads();
-            fetchSalespeople();
-          }}
-        />
-      )}
 
       {/* Change Password Modal for Current User */}
       <ChangePasswordModal
