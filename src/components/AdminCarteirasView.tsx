@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { Salesperson, Lead } from '../types';
+import { getSalespersonSlug } from '../lib/salesperson';
 import {
   Share2,
   RefreshCw,
   ChevronRight,
-  Plus
+  Plus,
+  Eye,
+  Layers,
+  Database
 } from 'lucide-react';
 
 interface AdminCarteirasViewProps {
@@ -12,6 +16,7 @@ interface AdminCarteirasViewProps {
   leads: Lead[];
   onOpenCreateSellerModal: () => void;
   onNavigateToKanban: (sellerId?: string) => void;
+  onInspectSeller?: (sellerId: string) => void;
   onRefreshData: () => void;
   onShowToast: (msg: string) => void;
 }
@@ -21,6 +26,7 @@ export const AdminCarteirasView: React.FC<AdminCarteirasViewProps> = ({
   leads,
   onOpenCreateSellerModal,
   onNavigateToKanban,
+  onInspectSeller,
   onRefreshData,
   onShowToast
 }) => {
@@ -131,29 +137,52 @@ export const AdminCarteirasView: React.FC<AdminCarteirasViewProps> = ({
                   <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
                     <div className="flex items-center gap-2.5">
                       <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs text-white"
+                        className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs text-white shadow-2xs shrink-0"
                         style={{ backgroundColor: seller.color || '#0284c7' }}
                       >
                         {seller.name.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <div className="font-bold text-neutral-900 text-sm">
-                          {seller.name}
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-neutral-900 text-sm">
+                            {seller.name}
+                          </span>
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
+                              seller.active !== false
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                          >
+                            {seller.active !== false ? 'Ativo' : 'Bloqueado'}
+                          </span>
                         </div>
                         <div className="text-[10px] text-neutral-400 font-mono">
-                          Rota: /v/{seller.slug || seller.id.replace(/^seller-/, '')}
+                          Rota: /v/{getSalespersonSlug(seller)}
                         </div>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => onNavigateToKanban(seller.id)}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                      title="Abrir o Kanban"
-                    >
-                      <span>Ver Kanban</span>
-                      <ChevronRight className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {onInspectSeller && (
+                        <button
+                          onClick={() => onInspectSeller(seller.id)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200"
+                          title="Abrir Raio-X detalhado com 4 sub-abas"
+                        >
+                          <Eye className="w-3 h-3 text-neutral-500" />
+                          <span>Raio-X</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onNavigateToKanban(seller.id)}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                        title="Abrir o Kanban"
+                      >
+                        <Layers className="w-3 h-3" />
+                        <span>Kanban</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 my-3 text-center">

@@ -81,11 +81,10 @@ export default function App() {
           setCurrentUser(data.user);
           if (data.user.role === 'salesperson' && data.user.salespersonId) {
             setSelectedSalespersonId(data.user.salespersonId);
+            setActiveTab('kanban');
           } else if (data.user.role === 'admin') {
-            const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-            if (!pathname.match(/^\/(?:v|vendedor|seller)\//i)) {
-              setActiveTab('admin');
-            }
+            setActiveTab('admin');
+            setAdminSection('cockpit');
           }
         } else {
           setCurrentUser(null);
@@ -395,6 +394,10 @@ export default function App() {
             setCurrentUser(user);
             if (user.role === 'salesperson' && user.salespersonId) {
               setSelectedSalespersonId(user.salespersonId);
+              setActiveTab('kanban');
+            } else if (user.role === 'admin') {
+              setActiveTab('admin');
+              setAdminSection('cockpit');
             }
             fetchLeads();
             fetchSalespeople();
@@ -410,15 +413,23 @@ export default function App() {
   return (
     <div className="flex flex-col xl:flex-row h-screen bg-[#f8f9fa] text-neutral-900 font-sans antialiased overflow-hidden">
       {/* Sidebar de Navegação */}
-      {activeTab === 'admin' && currentUser?.role === 'admin' ? (
+      {currentUser?.role === 'admin' ? (
         <AdminSidebar
           currentSection={adminSection}
-          onChangeSection={(sec) => setAdminSection(sec)}
+          onChangeSection={(sec) => {
+            setAdminSection(sec);
+            setActiveTab('admin');
+          }}
           selectedSalespersonId={inspectedSellerId}
-          onSelectSalesperson={(id) => setInspectedSellerId(id)}
+          onSelectSalesperson={(id) => {
+            setInspectedSellerId(id);
+            setAdminSection('vendedores');
+            setActiveTab('admin');
+          }}
           currentUser={currentUser}
           salespeople={salespeople}
           totalLeadsCount={leads.length}
+          isKanbanActive={activeTab === 'kanban'}
           onNavigateToKanban={() => setActiveTab('kanban')}
           onLogout={handleLogout}
         />
@@ -454,6 +465,11 @@ export default function App() {
                   if (sellerId) setSelectedSalespersonId(sellerId);
                   setActiveTab('kanban');
                 }}
+                onInspectSeller={(sellerId) => {
+                  setInspectedSellerId(sellerId);
+                  setAdminSection('vendedores');
+                  setActiveTab('admin');
+                }}
                 onRefreshData={() => {
                   fetchLeads();
                   fetchSalespeople();
@@ -470,6 +486,11 @@ export default function App() {
                   if (sellerId) setSelectedSalespersonId(sellerId);
                   setActiveTab('kanban');
                 }}
+                onRefreshData={() => {
+                  fetchLeads();
+                  fetchSalespeople();
+                }}
+                onLeadClick={(lead) => setSelectedLeadForDetail(lead)}
                 onShowToast={showToast}
               />
             ) : (
@@ -501,6 +522,31 @@ export default function App() {
           </>
         ) : (
           <>
+            {/* Top Operational Audit Banner for Super Admin when inspecting Kanban */}
+            {currentUser?.role === 'admin' && (
+              <div className="bg-neutral-900 text-white px-4 py-2 flex items-center justify-between text-xs shrink-0 border-b border-neutral-800 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="font-bold text-neutral-100">
+                    Modo de Auditoria e Inspeção do Pipeline Comercial
+                  </span>
+                  <span className="text-neutral-400 hidden md:inline">
+                    — Você está visualizando a mesa operacional dos closers
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveTab('admin');
+                    setAdminSection('cockpit');
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white font-bold transition-all border border-neutral-700 shadow-2xs cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Voltar ao Cockpit Executivo</span>
+                </button>
+              </div>
+            )}
+
             {/* Top Navbar Header with Salesperson Selector & Dedicated Instance indicator */}
             <header className="bg-white border-b border-neutral-200 px-3 md:px-6 py-2 md:py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0 shadow-2xs z-10">
               <div className="min-w-0 flex items-center gap-3">
@@ -596,24 +642,17 @@ export default function App() {
                       })}
                     </div>
 
-                    {/* Manage Sales Team & Distribute Leads Action Button */}
+                    {/* Return to Admin Cockpit Button */}
                     <button
-                      onClick={() => setIsSalesTeamModalOpen(true)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
-                      title="Cadastrar vendedores e dividir carteira de novos leads"
+                      onClick={() => {
+                        setActiveTab('admin');
+                        setAdminSection('cockpit');
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-black text-white text-xs font-bold shadow-2xs transition-all"
+                      title="Voltar à Mesa Diretora do Super Admin"
                     >
-                      <Share2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Equipe & Distribuir</span>
-                    </button>
-
-                    {/* Cockpit Super Admin Action Button */}
-                    <button
-                      onClick={() => setActiveTab('admin')}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 text-xs font-bold shadow-2xs transition-all"
-                      title="Abrir a Área do Super Admin"
-                    >
-                      <Shield className="w-3.5 h-3.5 text-amber-600" />
-                      <span className="hidden sm:inline">Área do Admin</span>
+                      <ArrowLeft className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Mesa do Admin</span>
                     </button>
                   </>
                 ) : (

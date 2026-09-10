@@ -1,6 +1,9 @@
 import { Salesperson } from '../types';
 
-export function getSalespersonSlug(seller: { id: string; name: string }): string {
+export function getSalespersonSlug(seller: { id: string; name: string; slug?: string }): string {
+  if (seller.slug && seller.slug.trim()) {
+    return seller.slug.trim().toLowerCase();
+  }
   // If id starts with seller- e.g. seller-thomas, extract the suffix if clean, or sanitize the name
   const nameClean = seller.name
     .toLowerCase()

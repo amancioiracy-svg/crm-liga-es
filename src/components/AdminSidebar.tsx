@@ -29,6 +29,7 @@ interface AdminSidebarProps {
   currentUser: User;
   salespeople: Salesperson[];
   totalLeadsCount: number;
+  isKanbanActive?: boolean;
   onNavigateToKanban: () => void;
   onLogout: () => void;
 }
@@ -41,6 +42,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   currentUser,
   salespeople,
   totalLeadsCount,
+  isKanbanActive = false,
   onNavigateToKanban,
   onLogout
 }) => {
@@ -228,14 +230,20 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       <div className="p-3 border-t border-neutral-200 bg-neutral-50/70 space-y-2">
         <button
           onClick={onNavigateToKanban}
-          className="w-full flex items-center justify-between p-2 rounded-xl bg-white hover:bg-neutral-100 border border-neutral-200 text-xs font-bold text-neutral-800 shadow-2xs transition-colors"
-          title="Alternar para visão operacional de atendimento"
+          className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition-all ${
+            isKanbanActive
+              ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-2xs ring-1 ring-blue-300'
+              : 'bg-white hover:bg-neutral-100 border-neutral-200 text-neutral-800 shadow-2xs'
+          }`}
+          title="Alternar para visão operacional de atendimento (Kanban)"
         >
           <div className="flex items-center gap-2">
-            <Layers className="w-3.5 h-3.5 text-blue-600" />
-            <span>Visão Kanban de Vendas</span>
+            <Layers className={`w-4 h-4 ${isKanbanActive ? 'text-blue-600' : 'text-neutral-500'}`} />
+            <span>{isKanbanActive ? 'Kanban (Auditando)' : 'Visão Kanban de Vendas'}</span>
           </div>
-          <span className="text-[9px] font-mono bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">
+          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+            isKanbanActive ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-600'
+          }`}>
             {totalLeadsCount}
           </span>
         </button>

@@ -35,7 +35,14 @@ export interface Salesperson {
   color: string;
   bgColor: string;
   isDefault?: boolean;
+  slug?: string;
+  active?: boolean;
   createdAt?: string;
+  totalLeads?: number;
+  uncontactedLeads?: number;
+  inProgressLeads?: number;
+  closedLeads?: number;
+  refusedLeads?: number;
 }
 
 export interface DistributeLeadsParams {

@@ -169,6 +169,8 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS salesperson_name VARCHAR(255) DEFAULT 'Thomas';
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS niche VARCHAR(255);
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS categories TEXT;
+          ALTER TABLE salespeople ADD COLUMN IF NOT EXISTS slug VARCHAR(255);
+          ALTER TABLE salespeople ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
 
           CREATE TABLE IF NOT EXISTS custom_tags (
             id VARCHAR(255) PRIMARY KEY,
@@ -844,6 +846,8 @@ app.get('/api/salespeople', async (req, res) => {
           s.color, 
           s.bg_color AS "bgColor", 
           s.is_default AS "isDefault", 
+          s.slug,
+          COALESCE(s.active, TRUE) AS "active",
           s.created_at AS "createdAt",
           COUNT(l.id)::int AS "totalLeads",
           COUNT(CASE WHEN l.column_status = 'Leads' AND (SELECT COUNT(*) FROM calls WHERE lead_id = l.id) = 0 THEN 1 END)::int AS "uncontactedLeads",
@@ -852,7 +856,7 @@ app.get('/api/salespeople', async (req, res) => {
           COUNT(CASE WHEN l.column_status = 'Recusado' THEN 1 END)::int AS "refusedLeads"
         FROM salespeople s
         LEFT JOIN leads l ON (l.salesperson_id = s.id OR (s.is_default = TRUE AND l.salesperson_id IS NULL))
-        GROUP BY s.id, s.name, s.email, s.phone, s.color, s.bg_color, s.is_default, s.created_at
+        GROUP BY s.id, s.name, s.email, s.phone, s.color, s.bg_color, s.is_default, s.slug, s.active, s.created_at
         ORDER BY s.is_default DESC, s.created_at ASC
       `);
       return res.json(spRes.rows);
@@ -871,6 +875,8 @@ app.get('/api/salespeople', async (req, res) => {
 
         return {
           ...s,
+          slug: s.slug || undefined,
+          active: s.active !== undefined ? s.active : true,
           totalLeads: myLeads.length,
           uncontactedLeads: uncontacted,
           inProgressLeads: inProgress,
@@ -947,7 +953,7 @@ app.post('/api/salespeople', async (req, res) => {
 // 3. Update salesperson
 app.put('/api/salespeople/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, email, phone, color, bgColor } = req.body;
+  const { name, email, phone, color, bgColor, slug, active } = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'Nome do vendedor(a) é obrigatório.' });
@@ -958,15 +964,17 @@ app.put('/api/salespeople/:id', async (req, res) => {
   const sellerBgColor = bgColor || '#e0f2fe';
   const sellerEmail = email ? email.trim() : '';
   const sellerPhone = phone ? phone.trim() : '';
+  const sellerSlug = slug !== undefined && slug !== null ? String(slug).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') : null;
+  const sellerActive = typeof active === 'boolean' ? active : true;
 
   try {
     if (usePostgres && pgPool) {
       const result = await pgPool.query(
         `UPDATE salespeople 
-         SET name = $1, email = $2, phone = $3, color = $4, bg_color = $5
-         WHERE id = $6
-         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", created_at AS "createdAt"`,
-        [nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor, id]
+         SET name = $1, email = $2, phone = $3, color = $4, bg_color = $5, slug = $6, active = $7
+         WHERE id = $8
+         RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", slug, active, created_at AS "createdAt"`,
+        [nameTrim, sellerEmail, sellerPhone, sellerColor, sellerBgColor, sellerSlug, sellerActive, id]
       );
       if (result.rowCount === 0) {
         return res.status(404).json({ error: 'Vendedor não encontrado.' });
@@ -974,6 +982,9 @@ app.put('/api/salespeople/:id', async (req, res) => {
 
       // Update salesperson_name in leads table
       await pgPool.query(`UPDATE leads SET salesperson_name = $1 WHERE salesperson_id = $2`, [nameTrim, id]);
+
+      // Sync active state and name with users table if a user exists
+      await pgPool.query(`UPDATE users SET active = $1, name = $2 WHERE salesperson_id = $3`, [sellerActive, nameTrim, id]);
 
       return res.json(result.rows[0]);
     } else {
@@ -986,6 +997,8 @@ app.put('/api/salespeople/:id', async (req, res) => {
       seller.phone = sellerPhone;
       seller.color = sellerColor;
       seller.bgColor = sellerBgColor;
+      if (sellerSlug !== null) seller.slug = sellerSlug;
+      seller.active = sellerActive;
       memorySalespeopleMap.set(id, seller);
 
       // Update leads in memory
@@ -995,11 +1008,217 @@ app.put('/api/salespeople/:id', async (req, res) => {
         }
       }
 
+      // Sync user in memory
+      for (const u of memoryUsersMap.values()) {
+        if (u.salespersonId === id) {
+          u.active = sellerActive;
+          u.name = nameTrim;
+        }
+      }
+
       return res.json(seller);
     }
   } catch (error: any) {
     console.error('Error updating salesperson:', error);
     res.status(500).json({ error: 'Erro ao atualizar vendedor.' });
+  }
+});
+
+// 3.1 Reset/Set password for a salesperson
+app.post('/api/salespeople/:id/reset-password', async (req: any, res) => {
+  const { id } = req.params;
+  const { newPassword } = req.body;
+
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 4) {
+    return res.status(400).json({ error: 'A senha deve ter pelo menos 4 caracteres.' });
+  }
+
+  const cleanPass = newPassword.trim();
+  const creds = hashPassword(cleanPass);
+  const now = new Date().toISOString();
+
+  try {
+    if (usePostgres && pgPool) {
+      // Find salesperson info
+      const spRes = await pgPool.query('SELECT name, email, slug FROM salespeople WHERE id = $1', [id]);
+      if (spRes.rowCount === 0) {
+        return res.status(404).json({ error: 'Vendedor não encontrado.' });
+      }
+      const seller = spRes.rows[0];
+
+      // Check if user already exists for this salesperson
+      const userRes = await pgPool.query('SELECT id, email FROM users WHERE salesperson_id = $1', [id]);
+      if (userRes.rowCount && userRes.rowCount > 0) {
+        const userId = userRes.rows[0].id;
+        await pgPool.query(
+          `UPDATE users SET password_hash = $1, password_salt = $2, active = TRUE WHERE id = $3`,
+          [creds.hash, creds.salt, userId]
+        );
+        return res.json({
+          success: true,
+          email: userRes.rows[0].email,
+          message: `Senha de ${seller.name} atualizada com sucesso!`
+        });
+      } else {
+        // Create user account for this closer
+        const cleanSlug = seller.slug || id.replace('seller-', '');
+        const email = seller.email || `${cleanSlug}@empresa.com`;
+        const newUserId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        await pgPool.query(
+          `INSERT INTO users (id, name, email, password_hash, password_salt, role, salesperson_id, active, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [newUserId, seller.name, email.toLowerCase(), creds.hash, creds.salt, 'salesperson', id, true, now]
+        );
+        return res.json({
+          success: true,
+          email: email.toLowerCase(),
+          message: `Credencial criada com sucesso para ${seller.name}!`
+        });
+      }
+    } else {
+      const seller = memorySalespeopleMap.get(id);
+      if (!seller) {
+        return res.status(404).json({ error: 'Vendedor não encontrado.' });
+      }
+      let foundUser: any = null;
+      for (const u of memoryUsersMap.values()) {
+        if (u.salespersonId === id) {
+          foundUser = u;
+          break;
+        }
+      }
+      if (foundUser) {
+        foundUser.passwordHash = creds.hash;
+        foundUser.passwordSalt = creds.salt;
+        foundUser.active = true;
+        return res.json({
+          success: true,
+          email: foundUser.email,
+          message: `Senha de ${seller.name} atualizada com sucesso!`
+        });
+      } else {
+        const cleanSlug = seller.slug || id.replace('seller-', '');
+        const email = (seller.email || `${cleanSlug}@empresa.com`).toLowerCase();
+        const newUserId = `user-${Date.now()}`;
+        memoryUsersMap.set(newUserId, {
+          id: newUserId,
+          name: seller.name,
+          email,
+          passwordHash: creds.hash,
+          passwordSalt: creds.salt,
+          role: 'salesperson',
+          salespersonId: id,
+          active: true,
+          createdAt: now
+        });
+        return res.json({
+          success: true,
+          email,
+          message: `Credencial criada com sucesso para ${seller.name}!`
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error('Erro ao redefinir senha do vendedor:', err);
+    res.status(500).json({ error: 'Erro ao redefinir senha do vendedor.' });
+  }
+});
+
+// 3.2 Quick Toggle Active status for salesperson
+app.patch('/api/salespeople/:id/toggle-active', async (req: any, res) => {
+  const { id } = req.params;
+  const { active } = req.body;
+
+  if (typeof active !== 'boolean') {
+    return res.status(400).json({ error: 'O status active deve ser booleano.' });
+  }
+
+  try {
+    if (usePostgres && pgPool) {
+      const result = await pgPool.query(
+        `UPDATE salespeople SET active = $1 WHERE id = $2 RETURNING id, name, active`,
+        [active, id]
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: 'Vendedor não encontrado.' });
+      }
+      await pgPool.query(`UPDATE users SET active = $1 WHERE salesperson_id = $2`, [active, id]);
+      return res.json({ success: true, salesperson: result.rows[0] });
+    } else {
+      const seller = memorySalespeopleMap.get(id);
+      if (!seller) {
+        return res.status(404).json({ error: 'Vendedor não encontrado.' });
+      }
+      seller.active = active;
+      for (const u of memoryUsersMap.values()) {
+        if (u.salespersonId === id) {
+          u.active = active;
+        }
+      }
+      return res.json({ success: true, salesperson: seller });
+    }
+  } catch (err: any) {
+    console.error('Erro ao alternar status do vendedor:', err);
+    res.status(500).json({ error: 'Erro ao alternar status do vendedor.' });
+  }
+});
+
+// 3.3 Batch assign leads to a salesperson
+app.post('/api/leads/batch-assign', async (req: any, res) => {
+  const { leadIds, targetSalespersonId, targetSalespersonName } = req.body;
+
+  if (!Array.isArray(leadIds) || leadIds.length === 0) {
+    return res.status(400).json({ error: 'Nenhum lead selecionado para transferência.' });
+  }
+  if (!targetSalespersonId) {
+    return res.status(400).json({ error: 'Vendedor de destino obrigatório.' });
+  }
+
+  try {
+    let resolvedName = targetSalespersonName;
+    if (!resolvedName) {
+      if (usePostgres && pgPool) {
+        const spRes = await pgPool.query('SELECT name FROM salespeople WHERE id = $1', [targetSalespersonId]);
+        if (spRes.rows.length > 0) resolvedName = spRes.rows[0].name;
+      } else {
+        const sp = memorySalespeopleMap.get(targetSalespersonId);
+        if (sp) resolvedName = sp.name;
+      }
+    }
+    resolvedName = resolvedName || 'Thomas';
+
+    if (usePostgres && pgPool) {
+      await pgPool.query(
+        `UPDATE leads 
+         SET salesperson_id = $1, salesperson_name = $2, updated_at = CURRENT_TIMESTAMP 
+         WHERE id = ANY($3::varchar[])`,
+        [targetSalespersonId, resolvedName, leadIds]
+      );
+      return res.json({
+        success: true,
+        count: leadIds.length,
+        message: `${leadIds.length} lead(s) transferido(s) para ${resolvedName} com sucesso!`
+      });
+    } else {
+      let count = 0;
+      for (const id of leadIds) {
+        const l = memoryLeadsMap.get(id);
+        if (l) {
+          l.salespersonId = targetSalespersonId;
+          l.salespersonName = resolvedName;
+          l.updatedAt = new Date().toISOString();
+          count++;
+        }
+      }
+      return res.json({
+        success: true,
+        count,
+        message: `${count} lead(s) transferido(s) para ${resolvedName} com sucesso!`
+      });
+    }
+  } catch (err: any) {
+    console.error('Erro ao transferir leads em lote:', err);
+    res.status(500).json({ error: 'Erro ao transferir leads em lote.' });
   }
 });
 
