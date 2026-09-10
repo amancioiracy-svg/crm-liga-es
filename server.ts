@@ -12,7 +12,9 @@ import { getLeadNiche } from './src/lib/niche.js';
 import { hashPassword, verifyPassword, generateSessionToken, DEFAULT_USERS, StoredUser } from './src/lib/serverAuth.js';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_ID
+  ? (Number(process.env.PORT) || 3000)
+  : 3000;
 
 // Enable HTTP gzip/brotli compression for fast network payloads
 app.use(compression());
