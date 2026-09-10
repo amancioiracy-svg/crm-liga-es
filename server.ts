@@ -2733,9 +2733,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // START SERVER & VITE INTEGRATION
 async function main() {
-  if (process.env.NODE_ENV !== 'production') {
+  const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
+  if (!isProduction) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: true },
       appType: 'spa'
     });
     app.use(vite.middlewares);
