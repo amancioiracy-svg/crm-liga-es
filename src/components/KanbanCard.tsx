@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
-import { Lead, PIPELINE_COLUMNS, ColumnStatus, CustomTag } from '../types';
-import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronRight, Check, CalendarClock, AlertTriangle, Clock, PhoneCall } from 'lucide-react';
+import { Lead, ColumnStatus, CustomTag, MasterColumnId } from '../types';
+import { Copy, QrCode, Phone, ExternalLink, MessageCircle, ChevronLeft, ChevronRight, Check, CalendarClock, AlertTriangle, Clock, PhoneCall, Sparkles, CheckCircle } from 'lucide-react';
 import { getWhatsAppUrl, getQrTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 import { getLeadNiche } from '../lib/niche';
+import { 
+  getMasterColumn, 
+  getPrevMasterColumn, 
+  getNextMasterColumn, 
+  resolveTargetColumnStatus, 
+  getAttemptLevel,
+  MASTER_COLUMNS_CONFIG 
+} from '../lib/pipeline';
 
 interface KanbanCardProps {
   lead: Lead;
@@ -12,6 +20,7 @@ interface KanbanCardProps {
   onOpenDetails: (lead: Lead) => void;
   onMoveColumn: (leadId: string, newColumn: ColumnStatus) => void;
   onShowToast: (message: string) => void;
+  onUpdateSubStatus?: (leadId: string, subStatus: string) => void;
 }
 
 export const KanbanCard: React.FC<KanbanCardProps> = ({
@@ -19,13 +28,16 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
   tags = [],
   onOpenDetails,
   onMoveColumn,
-  onShowToast
+  onShowToast,
+  onUpdateSubStatus
 }) => {
   const [showQrModal, setShowQrModal] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
 
-  const currentColumnIndex = PIPELINE_COLUMNS.indexOf(lead.columnStatus);
+  const currentMasterCol = getMasterColumn(lead);
+  const prevMasterCol = getPrevMasterColumn(currentMasterCol);
+  const nextMasterCol = getNextMasterColumn(currentMasterCol);
 
   const getTagStyle = (tagName: string) => {
     const found = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
@@ -78,15 +90,19 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
 
   const handleMoveLeft = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentColumnIndex > 0) {
-      onMoveColumn(lead.id, PIPELINE_COLUMNS[currentColumnIndex - 1]);
+    if (prevMasterCol) {
+      const targetCol = resolveTargetColumnStatus(prevMasterCol, lead);
+      onMoveColumn(lead.id, targetCol);
+      onShowToast(`Movido para "${MASTER_COLUMNS_CONFIG[prevMasterCol].title}"`);
     }
   };
 
   const handleMoveRight = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentColumnIndex < PIPELINE_COLUMNS.length - 1) {
-      onMoveColumn(lead.id, PIPELINE_COLUMNS[currentColumnIndex + 1]);
+    if (nextMasterCol) {
+      const targetCol = resolveTargetColumnStatus(nextMasterCol, lead);
+      onMoveColumn(lead.id, targetCol);
+      onShowToast(`Avançado para "${MASTER_COLUMNS_CONFIG[nextMasterCol].title}"`);
     }
   };
 
@@ -102,8 +118,16 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
     if (followUpInfo.status === 'SCHEDULED') {
       return 'border-l-4 border-l-blue-400 border-neutral-200';
     }
+    if (currentMasterCol === 'fechados') {
+      return 'border-l-4 border-l-emerald-500 border-emerald-200 bg-emerald-50/20';
+    }
+    if (currentMasterCol === 'interessados') {
+      return 'border-l-4 border-l-indigo-400 border-indigo-100';
+    }
     return 'border-neutral-200';
   };
+
+  const attemptLevel = getAttemptLevel(lead);
 
   return (
     <>
@@ -122,7 +146,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
             )}
             {followUpInfo.status === 'TODAY' && (
               <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                <CalendarClock className="w-3 h-3 text-amber-600 shrink-0" />
                 <span>🔔 {followUpInfo.label}</span>
               </span>
             )}
@@ -135,14 +159,60 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           </div>
         )}
 
-        {/* Header do Card: Nome em negrito sutil & Ações de movimento */}
+        {/* Header do Card: Nome em negrito sutil & Ações */}
         <div className="flex items-start justify-between gap-2 mb-1.5">
           <div className="min-w-0 flex-1">
-            {lead.salespersonName && (
-              <span className="inline-block text-[9px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded mb-0.5 max-w-full truncate border border-blue-100/80">
-                👤 {lead.salespersonName}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+              {lead.salespersonName && (
+                <span className="inline-block text-[9px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded max-w-full truncate border border-blue-100/80">
+                  👤 {lead.salespersonName}
+                </span>
+              )}
+
+              {/* Sub-estágio contextual elegante */}
+              {currentMasterCol === 'tentativas' && (
+                <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                  <Clock className="w-2.5 h-2.5 text-amber-600" />
+                  <span>{attemptLevel}ª Ligação</span>
+                </span>
+              )}
+
+              {currentMasterCol === 'interessados' && (
+                <div className="inline-flex items-center" onClick={(e) => e.stopPropagation()}>
+                  <select
+                    value={lead.subStatus || 'Contato Feito'}
+                    onChange={(e) => {
+                      const newSub = e.target.value;
+                      if (onUpdateSubStatus) {
+                        onUpdateSubStatus(lead.id, newSub);
+                        onShowToast(`Sub-estágio alterado para "${newSub}"`);
+                      }
+                    }}
+                    className="text-[9.5px] font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100/80 px-1 py-0.2 rounded border border-indigo-200 cursor-pointer focus:outline-hidden transition-colors"
+                    title="Clique para alterar a etapa de negociação deste lead"
+                  >
+                    <option value="Contato Feito">⭐ Contato Feito</option>
+                    <option value="Site Enviado">🚀 Site Enviado</option>
+                    <option value="Site Visualizado">👀 Site Visualizado</option>
+                    <option value="Em Decisão">🤝 Em Decisão</option>
+                  </select>
+                </div>
+              )}
+
+              {currentMasterCol === 'fechados' && (
+                <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                  <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
+                  <span>Fechado</span>
+                </span>
+              )}
+
+              {currentMasterCol === 'recusados' && lead.lossReason && (
+                <span className="inline-block text-[9px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.2 rounded border border-neutral-200">
+                  {lead.lossReason}
+                </span>
+              )}
+            </div>
+
             <h4 className="text-xs font-semibold text-neutral-800 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">
               {lead.name}
             </h4>
@@ -153,7 +223,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
             </div>
           </div>
 
-          {/* Botão QR Code muito pequeno conforme especificação */}
+          {/* Botão QR Code de Discagem */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -265,19 +335,19 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
           <div className="flex items-center gap-1">
             <button
               onClick={handleMoveLeft}
-              disabled={currentColumnIndex === 0}
+              disabled={!prevMasterCol}
               className="p-1 rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-              title="Voltar Coluna"
+              title={prevMasterCol ? `Mover para ${MASTER_COLUMNS_CONFIG[prevMasterCol].title}` : 'Primeira coluna'}
             >
-              <ChevronLeft className="w-3 h-3" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={handleMoveRight}
-              disabled={currentColumnIndex === PIPELINE_COLUMNS.length - 1}
+              disabled={!nextMasterCol}
               className="p-1 rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-              title="Avançar Coluna"
+              title={nextMasterCol ? `Avançar para ${MASTER_COLUMNS_CONFIG[nextMasterCol].title}` : 'Última coluna'}
             >
-              <ChevronRight className="w-3 h-3" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -293,3 +363,4 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
     </>
   );
 };
+

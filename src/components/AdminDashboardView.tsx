@@ -27,7 +27,12 @@ import {
   Briefcase,
   ArrowRight,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  LayoutDashboard,
+  Award,
+  Zap,
+  Activity,
+  Target
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -57,11 +62,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onChangeSection,
   onSelectSalesperson
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'carteiras' | 'auditoria' | 'blindagem'>('usuarios');
+  const [activeSubTab, setActiveSubTab] = useState<'cockpit' | 'usuarios' | 'carteiras' | 'auditoria' | 'blindagem'>(
+    (activeSection as any) || 'cockpit'
+  );
 
   useEffect(() => {
-    if (activeSection && activeSection !== 'cockpit') {
-      if (activeSection === 'usuarios' || activeSection === 'carteiras' || activeSection === 'auditoria' || activeSection === 'blindagem') {
+    if (activeSection) {
+      if (
+        activeSection === 'cockpit' ||
+        activeSection === 'usuarios' ||
+        activeSection === 'carteiras' ||
+        activeSection === 'auditoria' ||
+        activeSection === 'blindagem'
+      ) {
         setActiveSubTab(activeSection);
       }
     }
@@ -285,6 +298,49 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const conversionRate = totalLeadsCount > 0 ? ((closedLeadsCount / totalLeadsCount) * 100).toFixed(1) : '0.0';
   const totalCallsCount = leads.reduce((acc, l) => acc + (l.callCount || 0), 0);
 
+  const inNegotiationCount = leads.filter(l => 
+    l.columnStatus === 'Ligação 1' || 
+    l.columnStatus === 'Ligação 2' || 
+    l.columnStatus === 'Ligação 3' || 
+    l.columnStatus === 'Ligação 4' || 
+    l.columnStatus === 'Interessados'
+  ).length;
+
+  const funnelStages = [
+    { label: 'Novos / Sem Contato', status: 'Leads', count: leads.filter(l => l.columnStatus === 'Leads').length, color: 'bg-neutral-500', barColor: '#64748b' },
+    { label: 'Ligação 1 Realizada', status: 'Ligação 1', count: leads.filter(l => l.columnStatus === 'Ligação 1').length, color: 'bg-blue-500', barColor: '#3b82f6' },
+    { label: 'Ligação 2 Realizada', status: 'Ligação 2', count: leads.filter(l => l.columnStatus === 'Ligação 2').length, color: 'bg-indigo-500', barColor: '#6366f1' },
+    { label: 'Ligação 3 Realizada', status: 'Ligação 3', count: leads.filter(l => l.columnStatus === 'Ligação 3').length, color: 'bg-violet-500', barColor: '#8b5cf6' },
+    { label: 'Ligação 4 Realizada', status: 'Ligação 4', count: leads.filter(l => l.columnStatus === 'Ligação 4').length, color: 'bg-purple-500', barColor: '#a855f7' },
+    { label: 'Qualificados / Interessados', status: 'Interessados', count: leads.filter(l => l.columnStatus === 'Interessados').length, color: 'bg-amber-500', barColor: '#f59e0b' },
+    { label: 'Vendas Concluídas (Fechados)', status: 'Fechado', count: leads.filter(l => l.columnStatus === 'Fechado').length, color: 'bg-emerald-500', barColor: '#10b981' },
+    { label: 'Contatos Recusados / Perdidos', status: 'Recusado', count: leads.filter(l => l.columnStatus === 'Recusado').length, color: 'bg-rose-500', barColor: '#f43f5e' },
+  ];
+
+  const sellerPerformance = salespeople.map(seller => {
+    const sellerLeads = leads.filter(l => l.salespersonId === seller.id);
+    const sellerClosed = sellerLeads.filter(l => l.columnStatus === 'Fechado').length;
+    const sellerUncontacted = sellerLeads.filter(l => l.columnStatus === 'Leads' && (!l.callCount || l.callCount === 0)).length;
+    const sellerNegotiation = sellerLeads.filter(l => 
+      l.columnStatus === 'Ligação 1' || 
+      l.columnStatus === 'Ligação 2' || 
+      l.columnStatus === 'Ligação 3' || 
+      l.columnStatus === 'Ligação 4' || 
+      l.columnStatus === 'Interessados'
+    ).length;
+    const sellerCalls = sellerLeads.reduce((acc, l) => acc + (l.callCount || 0), 0);
+    const sellerConversion = sellerLeads.length > 0 ? ((sellerClosed / sellerLeads.length) * 100).toFixed(1) : '0.0';
+    return {
+      ...seller,
+      totalLeads: sellerLeads.length,
+      closedLeads: sellerClosed,
+      uncontactedLeads: sellerUncontacted,
+      negotiationLeads: sellerNegotiation,
+      totalCalls: sellerCalls,
+      conversionRate: sellerConversion
+    };
+  }).sort((a, b) => b.closedLeads - a.closedLeads || b.totalLeads - a.totalLeads);
+
   // Filtered Users
   const filteredUsers = users.filter(u => {
     if (roleFilter !== 'ALL' && u.role !== roleFilter) return false;
@@ -448,7 +504,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         {/* Inner Admin Navigation Tabs */}
         <div className="flex items-center gap-2 mt-4 pt-2 overflow-x-auto">
           <button
-            onClick={() => setActiveSubTab('usuarios')}
+            onClick={() => {
+              setActiveSubTab('cockpit');
+              onChangeSection?.('cockpit');
+            }}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap ${
+              activeSubTab === 'cockpit'
+                ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                : 'bg-white text-neutral-600 hover:bg-neutral-50 border-neutral-200'
+            }`}
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            <span>Cockpit Geral da Operação</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveSubTab('usuarios');
+              onChangeSection?.('usuarios');
+            }}
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap ${
               activeSubTab === 'usuarios'
                 ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
@@ -456,7 +530,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Gestão de Usuários & Vendedores ({users.length})</span>
+            <span>Gestão da Equipe ({users.length})</span>
           </button>
 
           <button
@@ -499,6 +573,281 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
       {/* Main Tab Content Area */}
       <div className="p-4 sm:p-6 space-y-6">
+        {/* TAB 0: COCKPIT GERAL EXECUTIVO */}
+        {activeSubTab === 'cockpit' && (
+          <div className="space-y-6">
+            {/* Top Operational Status Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-500">Base Sob Gestão</span>
+                  <Database className="w-4 h-4 text-blue-600" />
+                </div>
+                <div className="text-2xl font-bold text-neutral-900 mt-2">
+                  {totalLeadsCount.toLocaleString('pt-BR')} <span className="text-xs font-normal text-neutral-400">leads</span>
+                </div>
+                <div className="text-xs text-neutral-500 mt-1 flex items-center gap-1">
+                  <span className="text-blue-600 font-semibold">{salespeople.length} vendedores</span> com carteiras ativas
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-500">Leads Sem Contato (Virgens)</span>
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                </div>
+                <div className="text-2xl font-bold text-amber-600 mt-2">
+                  {uncontactedLeadsCount.toLocaleString('pt-BR')}
+                </div>
+                <div className="text-xs text-neutral-500 mt-1">
+                  {totalLeadsCount > 0 ? ((uncontactedLeadsCount / totalLeadsCount) * 100).toFixed(0) : 0}% aguardando primeira ligação
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-500">Em Negociação Ativa</span>
+                  <Activity className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div className="text-2xl font-bold text-indigo-600 mt-2">
+                  {inNegotiationCount.toLocaleString('pt-BR')}
+                </div>
+                <div className="text-xs text-neutral-500 mt-1">
+                  Leads entre Ligação 1 a 4 e Interessados
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-500">Vendas Fechadas</span>
+                  <Award className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="text-2xl font-bold text-emerald-600 mt-2">
+                  {closedLeadsCount.toLocaleString('pt-BR')}
+                </div>
+                <div className="text-xs text-emerald-700 font-semibold mt-1">
+                  Taxa de conversão: {conversionRate}%
+                </div>
+              </div>
+            </div>
+
+            {/* Funil Visual de Conversão */}
+            <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-neutral-100">
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                    <Target className="w-4 h-4 text-blue-600" />
+                    <span>Funil Comercial & Gargalos de Venda</span>
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    Visão cronológica dos leads distribuídos por cada etapa do pipeline comercial
+                  </p>
+                </div>
+                <span className="text-xs font-mono font-semibold bg-neutral-100 px-2.5 py-1 rounded-lg text-neutral-700">
+                  Total de Ligações: {totalCallsCount.toLocaleString('pt-BR')}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {funnelStages.map((stage) => {
+                  const pct = totalLeadsCount > 0 ? ((stage.count / totalLeadsCount) * 100).toFixed(1) : '0.0';
+                  return (
+                    <div key={stage.status} className="p-3.5 rounded-xl border border-neutral-100 bg-neutral-50/70">
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="font-semibold text-neutral-700 truncate">{stage.label}</span>
+                        <span className="font-mono font-bold text-neutral-900">{stage.count}</span>
+                      </div>
+                      <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden mb-1.5">
+                        <div
+                          className="h-2 rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.max(Number(pct), stage.count > 0 ? 4 : 0)}%`,
+                            backgroundColor: stage.barColor
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono">
+                        <span>{pct}% da base</span>
+                        {stage.status === 'Fechado' && (
+                          <span className="text-emerald-600 font-bold">Meta Final</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Leaderboard dos Closers */}
+            <div className="bg-white rounded-2xl border border-neutral-200 shadow-2xs overflow-hidden">
+              <div className="p-5 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                    <Award className="w-4 h-4 text-amber-500" />
+                    <span>Placar dos Closers (Leaderboard de Produção)</span>
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    Acompanhamento individual de cada vendedor em tempo real
+                  </p>
+                </div>
+                <button
+                  onClick={onOpenSalesTeamModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-colors"
+                >
+                  <Users className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Configurar Vendedores & Divisão</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-neutral-50/80 border-b border-neutral-200 text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Posição</th>
+                      <th className="py-3 px-4">Closer</th>
+                      <th className="py-3 px-4 text-center">Carteira Total</th>
+                      <th className="py-3 px-4 text-center">Leads Virgens</th>
+                      <th className="py-3 px-4 text-center">Em Negociação</th>
+                      <th className="py-3 px-4 text-center">Total Ligações</th>
+                      <th className="py-3 px-4 text-center">Vendas Fechadas</th>
+                      <th className="py-3 px-4 text-center">Conversão</th>
+                      <th className="py-3 px-4 text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {sellerPerformance.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="text-center py-8 text-neutral-400 text-xs">
+                          Nenhum vendedor cadastrado ainda.
+                        </td>
+                      </tr>
+                    ) : (
+                      sellerPerformance.map((seller, index) => (
+                        <tr key={seller.id} className="hover:bg-neutral-50/80 transition-colors">
+                          <td className="py-3 px-4 font-bold text-neutral-600">
+                            {index === 0 ? (
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 text-amber-800 text-xs font-black border border-amber-300">
+                                🥇
+                              </span>
+                            ) : index === 1 ? (
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-700 text-xs font-black border border-slate-300">
+                                🥈
+                              </span>
+                            ) : index === 2 ? (
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-50 text-amber-900 text-xs font-black border border-amber-200">
+                                🥉
+                              </span>
+                            ) : (
+                              <span className="font-mono text-neutral-400 pl-2">#{index + 1}</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2.5">
+                              <span
+                                className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
+                                style={{ backgroundColor: seller.color || '#3b82f6' }}
+                              >
+                                {seller.name.charAt(0).toUpperCase()}
+                              </span>
+                              <div>
+                                <div className="font-bold text-neutral-900 flex items-center gap-1.5">
+                                  {seller.name}
+                                  {seller.isDefault && (
+                                    <span className="text-[9px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded font-mono font-medium">
+                                      Principal
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-neutral-400 font-mono">
+                                  ID: {seller.id}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center font-bold text-neutral-900 font-mono">
+                            {seller.totalLeads}
+                          </td>
+                          <td className="py-3 px-4 text-center font-mono">
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                              seller.uncontactedLeads > 0 ? 'bg-amber-100 text-amber-800' : 'bg-neutral-100 text-neutral-500'
+                            }`}>
+                              {seller.uncontactedLeads}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center font-mono font-medium text-indigo-700">
+                            {seller.negotiationLeads}
+                          </td>
+                          <td className="py-3 px-4 text-center font-mono text-neutral-600">
+                            {seller.totalCalls}
+                          </td>
+                          <td className="py-3 px-4 text-center font-mono">
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                              {seller.closedLeads}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center font-mono font-bold text-neutral-800">
+                            {seller.conversionRate}%
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                onNavigateToKanban(seller.id);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-neutral-900 text-white hover:bg-black transition-colors"
+                              title={`Abrir o Pipeline Kanban focado em ${seller.name}`}
+                            >
+                              <span>Abrir Carteira</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Blindagem & Infraestrutura Info Card */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-white rounded-2xl border border-neutral-200 shadow-2xs flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 shrink-0">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-neutral-900">Isolamento de Dados Blindado</h4>
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Vendedores acessam exclusivamente os leads de sua própria carteira. Bloqueio nativo por token e sessão no PostgreSQL.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-white rounded-2xl border border-neutral-200 shadow-2xs flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-600 shrink-0">
+                  <Zap className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-neutral-900">Alta Performance Indexada</h4>
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Índices de banco otimizados para operações com centenas de milhares e até 1M+ de leads sem perda de responsividade.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-white rounded-2xl border border-neutral-200 shadow-2xs flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-purple-50 text-purple-600 shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-neutral-900">Auditoria Completa (Caixa-Preta)</h4>
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Todas as ações de criação, distribuição, login e exclusão são rastreadas cronologicamente com IP e autor.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {/* TAB 1: GESTÃO DE USUÁRIOS & RBAC */}
         {activeSubTab === 'usuarios' && (
           <div className="space-y-4">

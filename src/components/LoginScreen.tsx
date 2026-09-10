@@ -142,7 +142,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onShow
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 active:bg-black text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 active:bg-black text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50 mt-2"
             >
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -154,91 +154,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onShow
               )}
             </button>
           </form>
-
-          {/* Atalhos de Demonstração e Teste Rápido (1 Clique) */}
-          <div className="pt-4 border-t border-neutral-100 space-y-2.5">
-            <span className="text-[11px] font-semibold text-neutral-500 block text-center">
-              Acesso Rápido de Teste (1 Toque):
-            </span>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('admin@crm.com', 'admin123')}
-                className="flex items-center justify-between p-2 rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 text-left transition-colors"
-              >
-                <div>
-                  <div className="text-[11px] font-bold text-amber-950 flex items-center gap-1">
-                    <span>👑 Super Admin</span>
-                  </div>
-                  <div className="text-[10px] text-amber-700">Dono / Acesso Total</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-700" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('thomas@empresa.com', '123')}
-                className="flex items-center justify-between p-2 rounded-xl border border-blue-200 bg-blue-50/60 hover:bg-blue-100/70 text-left transition-colors"
-              >
-                <div>
-                  <div className="text-[11px] font-bold text-blue-950 flex items-center gap-1">
-                    <span>💼 Thomas</span>
-                  </div>
-                  <div className="text-[10px] text-blue-700">Vendedor (Carteira)</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-blue-700" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('lara@empresa.com', '123')}
-                className="flex items-center justify-between p-2 rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100/70 text-left transition-colors"
-              >
-                <div>
-                  <div className="text-[11px] font-bold text-purple-950 flex items-center gap-1">
-                    <span>💼 Lara Luiza</span>
-                  </div>
-                  <div className="text-[10px] text-purple-700">Vendedora (Carteira)</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-purple-700" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('pollyanna@empresa.com', '123')}
-                className="flex items-center justify-between p-2 rounded-xl border border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/70 text-left transition-colors"
-              >
-                <div>
-                  <div className="text-[11px] font-bold text-emerald-950 flex items-center gap-1">
-                    <span>💼 Pollyanna</span>
-                  </div>
-                  <div className="text-[10px] text-emerald-700">Vendedora (Carteira)</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-emerald-700" />
-              </button>
-            </div>
-          </div>
         </div>
 
-        {/* Pilares de Segurança do Blueprint */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-          <div className="p-2 bg-white rounded-xl border border-neutral-200 shadow-2xs">
-            <span className="text-[10px] font-bold text-neutral-800 block">Argon2/Scrypt</span>
-            <span className="text-[9px] text-neutral-500">Hash Protegido</span>
-          </div>
-          <div className="p-2 bg-white rounded-xl border border-neutral-200 shadow-2xs">
-            <span className="text-[10px] font-bold text-neutral-800 block">HttpOnly</span>
-            <span className="text-[9px] text-neutral-500">Cookie Anti-XSS</span>
-          </div>
-          <div className="p-2 bg-white rounded-xl border border-neutral-200 shadow-2xs">
-            <span className="text-[10px] font-bold text-neutral-800 block">RBAC</span>
-            <span className="text-[9px] text-neutral-500">Hierarquia Real</span>
-          </div>
-          <div className="p-2 bg-white rounded-xl border border-neutral-200 shadow-2xs">
-            <span className="text-[10px] font-bold text-neutral-800 block">Audit Log</span>
-            <span className="text-[9px] text-neutral-500">Caixa-Preta</span>
-          </div>
+        {/* Rodapé discreto e profissional */}
+        <div className="text-center">
+          <p className="text-[11px] text-neutral-400">
+            Ambiente corporativo seguro • Sessão monitorada e criptografada
+          </p>
         </div>
       </div>
     </div>

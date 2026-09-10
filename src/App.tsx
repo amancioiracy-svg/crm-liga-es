@@ -237,6 +237,33 @@ export default function App() {
     }
   };
 
+  // Atualizar subStatus do lead (ex: 'Site Enviado', 'Site Visualizado', 'Em Decisão')
+  const handleUpdateSubStatus = async (leadId: string, subStatus: string) => {
+    setLeads((prev) =>
+      prev.map((l) => (l.id === leadId ? { ...l, subStatus } : l))
+    );
+
+    if (selectedLeadForDetail && selectedLeadForDetail.id === leadId) {
+      setSelectedLeadForDetail((prev) => prev ? { ...prev, subStatus } : null);
+    }
+
+    try {
+      const res = await fetch(`/api/leads/${leadId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subStatus })
+      });
+
+      if (!res.ok) {
+        throw new Error('Falha ao atualizar sub-estágio');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao atualizar sub-estágio do lead.');
+      fetchLeads();
+    }
+  };
+
   // Atribuir lead a um vendedor específico
   const handleReassignLead = async (leadId: string, salespersonId: string, salespersonName: string) => {
     // Atualização otimista na UI
@@ -498,7 +525,7 @@ export default function App() {
                 currentUser={currentUser}
                 salespeople={salespeople}
                 leads={leads}
-                activeSection={adminSection === 'cockpit' ? undefined : adminSection}
+                activeSection={adminSection}
                 onChangeSection={(sec) => setAdminSection(sec as AdminViewSection)}
                 onSelectSalesperson={(id) => {
                   setInspectedSellerId(id);
@@ -718,6 +745,7 @@ export default function App() {
                   onOpenDetails={(lead) => setSelectedLeadForDetail(lead)}
                   onMoveColumn={handleUpdateLeadColumn}
                   onShowToast={showToast}
+                  onUpdateSubStatus={handleUpdateSubStatus}
                 />
               ) : activeTab === 'table' ? (
                 <AllLeadsTable
@@ -754,6 +782,7 @@ export default function App() {
         onSelectLead={(nextLead) => setSelectedLeadForDetail(nextLead)}
         tags={tags}
         salespeople={salespeople}
+        currentUser={currentUser || undefined}
         onOpenTagsModal={() => setIsTagsModalOpen(true)}
         onAddCallLog={handleAddCallLog}
         onUpdateColumn={handleUpdateLeadColumn}

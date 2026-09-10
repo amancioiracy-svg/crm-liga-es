@@ -19,6 +19,21 @@ export const PIPELINE_COLUMNS: ColumnStatus[] = [
   'Recusado'
 ];
 
+export type MasterColumnId = 'novos' | 'tentativas' | 'interessados' | 'fechados' | 'recusados';
+
+export type InteressadoSubStage = 
+  | 'Contato Inicial'
+  | 'Site Enviado'
+  | 'Site Visualizado'
+  | 'Em Decisão';
+
+export type LossReason =
+  | 'Sem Interesse'
+  | 'Sem Orçamento'
+  | 'Não Atendeu'
+  | 'Concorrente'
+  | 'Outro';
+
 export interface CustomTag {
   id: string;
   name: string;
@@ -80,6 +95,8 @@ export interface Lead {
   salespersonName?: string;
   niche?: string;
   categories?: string | string[];
+  subStatus?: string;
+  lossReason?: string;
   calls?: CallLog[];
 }
 

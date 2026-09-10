@@ -26,12 +26,23 @@ export function generateSessionToken(): string {
 }
 
 // Usuários padrão pré-configurados
+const nyrohAdminCreds = hashPassword('Thomas123456!', 'crm_salt_admin_nyroh');
 const adminCreds = hashPassword('admin123', 'crm_salt_admin');
 const thomasCreds = hashPassword('123', 'crm_salt_thomas');
 const laraCreds = hashPassword('123', 'crm_salt_lara');
 const pollyCreds = hashPassword('123', 'crm_salt_polly');
 
 export const DEFAULT_USERS: StoredUser[] = [
+  {
+    id: 'user-admin-nyroh',
+    name: 'Super Admin',
+    email: 'admin@nyroh.com',
+    role: 'admin',
+    active: true,
+    passwordHash: nyrohAdminCreds.hash,
+    passwordSalt: nyrohAdminCreds.salt,
+    createdAt: new Date().toISOString()
+  },
   {
     id: 'user-admin',
     name: 'Super Admin (Dono)',

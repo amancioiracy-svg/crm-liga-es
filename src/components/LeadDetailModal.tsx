@@ -1,14 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Lead, CallLog, CustomTag, PIPELINE_COLUMNS, ColumnStatus, Salesperson } from '../types';
+import { Lead, CallLog, CustomTag, PIPELINE_COLUMNS, ColumnStatus, Salesperson, User as UserType, MasterColumnId } from '../types';
 import { 
   X, Phone, ExternalLink, Calendar, MessageSquare, Plus, CheckCircle2, 
   QrCode, Tag as TagIcon, Play, Pause, RotateCcw, Clock, ArrowRight, PhoneCall, PhoneOff,
-  CalendarClock, AlertTriangle, Bell, User, Sparkles, ChevronRight, Zap, History, Briefcase
+  CalendarClock, AlertTriangle, Bell, User, Sparkles, ChevronRight, Zap, History, Briefcase,
+  Inbox, Star, Trophy, XCircle
 } from 'lucide-react';
 import { getWhatsAppUrl, getDialerTelLink, getStoredWhatsAppTemplate, formatWhatsAppMessage } from '../lib/phone';
 import { QrCodeModal } from './QrCodeModal';
 import { getFollowUpInfo } from '../lib/followUp';
 import { getLeadNiche } from '../lib/niche';
+import { 
+  MASTER_COLUMNS_CONFIG, 
+  MASTER_COLUMNS_ORDER, 
+  getMasterColumn, 
+  resolveTargetColumnStatus 
+} from '../lib/pipeline';
 
 interface LeadDetailModalProps {
   isOpen: boolean;
@@ -18,6 +25,7 @@ interface LeadDetailModalProps {
   onSelectLead?: (lead: Lead) => void;
   tags: CustomTag[];
   salespeople?: Salesperson[];
+  currentUser?: UserType;
   onOpenTagsModal: () => void;
   onAddCallLog: (leadId: string, tag: string, comment: string, durationSeconds?: number, followUpAt?: string) => Promise<void>;
   onUpdateColumn: (leadId: string, newColumn: ColumnStatus) => Promise<void>;
@@ -43,6 +51,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onSelectLead,
   tags,
   salespeople = [],
+  currentUser,
   onOpenTagsModal,
   onAddCallLog,
   onUpdateColumn,
@@ -52,6 +61,8 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [comment, setComment] = useState('');
   const [selectedColumn, setSelectedColumn] = useState<ColumnStatus>('Leads');
+  const [subStatus, setSubStatus] = useState<string>('Contato Feito');
+  const [lossReason, setLossReason] = useState<string>('Sem Interesse');
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loadingCalls, setLoadingCalls] = useState(false);
   const [submittingCall, setSubmittingCall] = useState(false);
@@ -80,6 +91,8 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   useEffect(() => {
     if (lead) {
       setSelectedColumn(lead.columnStatus);
+      setSubStatus(lead.subStatus || 'Contato Feito');
+      setLossReason(lead.lossReason || 'Sem Interesse');
       fetchCallHistory(lead.id);
       setComment('');
       setFollowUpDateTime('');
@@ -609,43 +622,198 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
             {/* Form de Registro da Ligação */}
             <form onSubmit={handleSubmitCallForm} className="bg-white border border-neutral-200 rounded-xl p-3.5 sm:p-4 shadow-2xs space-y-3.5">
               
-              {/* 1. SELETOR DE ETAPA DO PIPELINE (NO TOPO, ANTES DAS TAGS) */}
-              <div className="bg-neutral-50/80 p-3 rounded-xl border border-neutral-200/90 space-y-2">
+              {/* 1. SELETOR DE ETAPA DO PIPELINE (5 COLUNAS MASTER + SUB-FUNIL) */}
+              <div className="bg-neutral-50/80 p-3.5 rounded-xl border border-neutral-200/90 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-blue-600" />
                     <span>Mover para Etapa do Funil *</span>
                   </label>
-                  <span className="text-[10px] font-semibold text-neutral-500">
+                  <span className="text-[10.5px] font-semibold text-neutral-600">
                     Atual: <strong className="text-blue-700">{selectedColumn}</strong>
+                    {selectedColumn === 'Interessado' && subStatus && (
+                      <span className="ml-1 text-indigo-600">({subStatus})</span>
+                    )}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  {PIPELINE_COLUMNS.map((col) => {
-                    const isCurrent = selectedColumn === col;
+                {/* 5 Master Column Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                  {MASTER_COLUMNS_ORDER.map((colId) => {
+                    const colConfig = MASTER_COLUMNS_CONFIG[colId];
+                    const currentMaster = getMasterColumn({ columnStatus: selectedColumn });
+                    const isSelected = currentMaster === colId;
+
                     return (
                       <button
                         type="button"
-                        key={col}
+                        key={colId}
                         onClick={async () => {
-                          setSelectedColumn(col);
-                          if (lead && col !== lead.columnStatus) {
-                            await onUpdateColumn(lead.id, col);
-                            onShowToast(`Etapa alterada para "${col}"`);
+                          const targetCol = resolveTargetColumnStatus(colId, lead || undefined);
+                          setSelectedColumn(targetCol);
+                          if (lead) {
+                            try {
+                              await fetch(`/api/leads/${lead.id}/status`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  columnStatus: targetCol,
+                                  subStatus,
+                                  lossReason
+                                })
+                              });
+                              await onUpdateColumn(lead.id, targetCol);
+                              onShowToast(`Etapa alterada para "${colConfig.title}"`);
+                            } catch (err) {
+                              console.error(err);
+                            }
                           }
                         }}
-                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition-all text-center truncate touch-manipulation ${
-                          isCurrent
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        className={`text-xs px-2 py-2 rounded-lg border font-semibold transition-all flex flex-col items-center justify-center gap-1 touch-manipulation text-center ${
+                          isSelected
+                            ? `${colConfig.theme.activeTabBg} shadow-xs border-transparent font-bold`
                             : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-100'
                         }`}
                       >
-                        {col}
+                        <span className="text-[11px] truncate w-full">{colConfig.title}</span>
                       </button>
                     );
                   })}
                 </div>
+
+                {/* SUB-FUNIL DE INTERESSADOS (QUANDO EM INTERESSADO) */}
+                {selectedColumn === 'Interessado' && (
+                  <div className="mt-2.5 pt-2.5 border-t border-neutral-200/80">
+                    <label className="block text-[11px] font-bold text-indigo-900 mb-1.5 flex items-center gap-1">
+                      <Star className="w-3 h-3 text-indigo-600" />
+                      <span>Sub-Funil de Negociação (Etapa Interna):</span>
+                    </label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        'Contato Feito',
+                        'Site Enviado',
+                        'Site Visualizado',
+                        'Em Decisão'
+                      ].map((subOption) => {
+                        const isSubSelected = (subStatus || 'Contato Feito') === subOption;
+                        return (
+                          <button
+                            type="button"
+                            key={subOption}
+                            onClick={async () => {
+                              setSubStatus(subOption);
+                              if (lead) {
+                                lead.subStatus = subOption;
+                                try {
+                                  await fetch(`/api/leads/${lead.id}/status`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ subStatus: subOption })
+                                  });
+                                  onShowToast(`Sub-estágio: "${subOption}"`);
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }
+                            }}
+                            className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold transition-all ${
+                              isSubSelected
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                            }`}
+                          >
+                            {subOption}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* SUB-ESTÁGIOS DE TENTATIVAS DE LIGAÇÃO */}
+                {(selectedColumn === 'Ligação 1' || selectedColumn === 'Ligação 2' || selectedColumn === 'Ligação 3' || selectedColumn === 'Ligação 4') && (
+                  <div className="mt-2.5 pt-2.5 border-t border-neutral-200/80">
+                    <label className="block text-[11px] font-bold text-amber-900 mb-1.5 flex items-center gap-1">
+                      <PhoneCall className="w-3 h-3 text-amber-600" />
+                      <span>Cadência da Ligação:</span>
+                    </label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(['Ligação 1', 'Ligação 2', 'Ligação 3', 'Ligação 4'] as ColumnStatus[]).map((ligCol, idx) => {
+                        const isLigSelected = selectedColumn === ligCol;
+                        return (
+                          <button
+                            type="button"
+                            key={ligCol}
+                            onClick={async () => {
+                              setSelectedColumn(ligCol);
+                              if (lead && ligCol !== lead.columnStatus) {
+                                await onUpdateColumn(lead.id, ligCol);
+                                onShowToast(`Avançado para "${ligCol}"`);
+                              }
+                            }}
+                            className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold transition-all ${
+                              isLigSelected
+                                ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                                : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                            }`}
+                          >
+                            {idx + 1}ª Ligação
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* MOTIVO DE RECUSA (QUANDO EM RECUSADO) */}
+                {selectedColumn === 'Recusado' && (
+                  <div className="mt-2.5 pt-2.5 border-t border-neutral-200/80">
+                    <label className="block text-[11px] font-bold text-rose-900 mb-1.5 flex items-center gap-1">
+                      <XCircle className="w-3 h-3 text-rose-600" />
+                      <span>Motivo da Desqualificação:</span>
+                    </label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        'Sem Interesse',
+                        'Sem Orçamento',
+                        'Não Atendeu',
+                        'Concorrente',
+                        'Outro'
+                      ].map((reason) => {
+                        const isReasonSelected = (lossReason || 'Sem Interesse') === reason;
+                        return (
+                          <button
+                            type="button"
+                            key={reason}
+                            onClick={async () => {
+                              setLossReason(reason);
+                              if (lead) {
+                                lead.lossReason = reason;
+                                try {
+                                  await fetch(`/api/leads/${lead.id}/status`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ lossReason: reason })
+                                  });
+                                  onShowToast(`Motivo de perda: "${reason}"`);
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }
+                            }}
+                            className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold transition-all ${
+                              isReasonSelected
+                                ? 'bg-neutral-800 text-white border-neutral-800 shadow-2xs'
+                                : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                            }`}
+                          >
+                            {reason}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 2. Seletor de Etiquetas / Resultado da Ligação */}
@@ -783,31 +951,47 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 />
               </div>
 
-              {/* 5. Vendedor Responsável (se houver vendedores configurados) */}
+              {/* 5. Vendedor Responsável (Restrito a Admin para reatribuir) */}
               {salespeople.length > 0 && (
                 <div className="pt-2 border-t border-neutral-100">
-                  <label className="block text-[11px] font-bold text-neutral-600 mb-1">
-                    Vendedor Responsável:
-                  </label>
-                  <select
-                    value={lead.salespersonId || 'seller-thomas'}
-                    onChange={async (e) => {
-                      const newSellerId = e.target.value;
-                      const target = salespeople.find((s) => s.id === newSellerId);
-                      const newSellerName = target ? target.name : 'Thomas';
-                      if (onReassignLead) {
-                        await onReassignLead(lead.id, newSellerId, newSellerName);
-                        onShowToast(`Lead atribuído a ${newSellerName}`);
-                      }
-                    }}
-                    className="w-full text-xs bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 font-semibold text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    {salespeople.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} {s.isDefault ? '(Principal)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-neutral-600">
+                      Vendedor Responsável:
+                    </label>
+                    {currentUser?.role !== 'admin' && (
+                      <span className="text-[10px] text-neutral-400 italic">
+                        (Atribuído pela Diretoria)
+                      </span>
+                    )}
+                  </div>
+                  {currentUser?.role === 'admin' ? (
+                    <select
+                      value={lead.salespersonId || 'seller-thomas'}
+                      onChange={async (e) => {
+                        const newSellerId = e.target.value;
+                        const target = salespeople.find((s) => s.id === newSellerId);
+                        const newSellerName = target ? target.name : 'Thomas';
+                        if (onReassignLead) {
+                          await onReassignLead(lead.id, newSellerId, newSellerName);
+                          onShowToast(`Lead atribuído a ${newSellerName}`);
+                        }
+                      }}
+                      className="w-full text-xs bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 font-semibold text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      {salespeople.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} {s.isDefault ? '(Principal)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-neutral-100/80 border border-neutral-200">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                      <span className="text-xs font-bold text-neutral-800">
+                        {lead.salespersonName || 'Você'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </form>

@@ -12,7 +12,7 @@ import { getLeadNiche } from './src/lib/niche.js';
 import { hashPassword, verifyPassword, generateSessionToken, DEFAULT_USERS, StoredUser } from './src/lib/serverAuth.js';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = 3000;
 
 // Enable HTTP gzip/brotli compression for fast network payloads
 app.use(compression());
@@ -169,6 +169,8 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS salesperson_name VARCHAR(255) DEFAULT 'Thomas';
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS niche VARCHAR(255);
           ALTER TABLE leads ADD COLUMN IF NOT EXISTS categories TEXT;
+          ALTER TABLE leads ADD COLUMN IF NOT EXISTS sub_status VARCHAR(255);
+          ALTER TABLE leads ADD COLUMN IF NOT EXISTS loss_reason VARCHAR(255);
           ALTER TABLE salespeople ADD COLUMN IF NOT EXISTS slug VARCHAR(255);
           ALTER TABLE salespeople ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
 
@@ -233,6 +235,11 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
           CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
           CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token);
+          CREATE INDEX IF NOT EXISTS idx_leads_salesperson ON leads(salesperson_id);
+          CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(column_status);
+          CREATE INDEX IF NOT EXISTS idx_leads_created ON leads(created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_calls_lead ON calls(lead_id);
+          CREATE INDEX IF NOT EXISTS idx_calls_created ON calls(created_at DESC);
         `);
 
         // Seed default users if empty
@@ -247,6 +254,16 @@ async function initDatabase(retries = 5, delayMs = 3000) {
             );
           }
         }
+
+        // Always guarantee that Super Admin admin@nyroh.com exists with password Thomas123456!
+        const nyrohCreds = hashPassword('Thomas123456!', 'crm_salt_admin_nyroh');
+        await client.query(
+          `INSERT INTO users (id, name, email, password_hash, password_salt, role, salesperson_id, active, created_at)
+           VALUES ('user-admin-nyroh', 'Super Admin', 'admin@nyroh.com', $1, $2, 'admin', NULL, TRUE, CURRENT_TIMESTAMP)
+           ON CONFLICT (email) DO UPDATE
+           SET password_hash = $1, password_salt = $2, role = 'admin', active = TRUE`,
+          [nyrohCreds.hash, nyrohCreds.salt]
+        );
 
         // Seed default tags if table is empty
         const tagCountRes = await client.query(`SELECT COUNT(*)::int AS count FROM custom_tags`);
@@ -710,6 +727,8 @@ app.get('/api/leads', async (req: any, res) => {
           COALESCE(l.salesperson_name, 'Thomas') AS "salespersonName",
           l.niche AS "niche",
           l.categories AS "categories",
+          l.sub_status AS "subStatus",
+          l.loss_reason AS "lossReason",
           l.next_follow_up_at AS "nextFollowUpAt",
           l.created_at AS "createdAt",
           l.updated_at AS "updatedAt",
@@ -950,6 +969,114 @@ app.post('/api/salespeople', async (req, res) => {
   }
 });
 
+// 2.1 Batch create multiple salespeople via JSON
+app.post('/api/salespeople/batch', async (req, res) => {
+  try {
+    let items = req.body;
+    if (items && !Array.isArray(items)) {
+      items = items.salespeople || items.vendedores || items.items || items.data || [];
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Nenhum vendedor fornecido no lote JSON.' });
+    }
+
+    const paletteList = [
+      { color: '#0284c7', bgColor: '#e0f2fe' },
+      { color: '#059669', bgColor: '#d1fae5' },
+      { color: '#7c3aed', bgColor: '#ede9fe' },
+      { color: '#db2777', bgColor: '#fce7f3' },
+      { color: '#d97706', bgColor: '#fef3c7' },
+      { color: '#4f46e5', bgColor: '#e0e7ff' },
+      { color: '#0891b2', bgColor: '#cffafe' },
+      { color: '#475569', bgColor: '#f1f5f9' },
+    ];
+
+    const createdList: any[] = [];
+    const now = new Date().toISOString();
+
+    for (let i = 0; i < items.length; i++) {
+      const raw = items[i];
+      let sellerName = '';
+      let sellerEmail = '';
+      let sellerPhone = '';
+      let sellerColor = '';
+      let sellerBgColor = '';
+
+      if (typeof raw === 'string') {
+        sellerName = raw.trim();
+      } else if (raw && typeof raw === 'object') {
+        sellerName = String(raw.name || raw.nome || raw.fullName || '').trim();
+        sellerEmail = String(raw.email || raw.mail || '').trim();
+        sellerPhone = String(raw.phone || raw.telefone || raw.whatsapp || raw.celular || '').trim();
+        sellerColor = String(raw.color || raw.cor || '').trim();
+        sellerBgColor = String(raw.bgColor || raw.corFundo || '').trim();
+      }
+
+      if (!sellerName) continue;
+
+      const pal = paletteList[i % paletteList.length];
+      const finalColor = sellerColor || pal.color;
+      const finalBgColor = sellerBgColor || pal.bgColor;
+      const sellerId = `seller-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`;
+      const cleanSlug = sellerName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+      if (usePostgres && pgPool) {
+        const result = await pgPool.query(
+          `INSERT INTO salespeople (id, name, email, phone, color, bg_color, is_default, slug, active, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, TRUE, CURRENT_TIMESTAMP)
+           RETURNING id, name, email, phone, color, bg_color AS "bgColor", is_default AS "isDefault", slug, active, created_at AS "createdAt"`,
+          [sellerId, sellerName, sellerEmail, sellerPhone, finalColor, finalBgColor, cleanSlug]
+        );
+        createdList.push({
+          ...result.rows[0],
+          totalLeads: 0,
+          uncontactedLeads: 0,
+          inProgressLeads: 0,
+          closedLeads: 0,
+          refusedLeads: 0
+        });
+      } else {
+        const newSeller: Salesperson = {
+          id: sellerId,
+          name: sellerName,
+          email: sellerEmail,
+          phone: sellerPhone,
+          color: finalColor,
+          bgColor: finalBgColor,
+          isDefault: false,
+          slug: cleanSlug,
+          active: true,
+          createdAt: now
+        };
+        memorySalespeopleMap.set(sellerId, newSeller);
+        createdList.push({
+          ...newSeller,
+          totalLeads: 0,
+          uncontactedLeads: 0,
+          inProgressLeads: 0,
+          closedLeads: 0,
+          refusedLeads: 0
+        });
+      }
+    }
+
+    if (createdList.length === 0) {
+      return res.status(400).json({ error: 'Nenhum vendedor válido com nome preenchido foi encontrado no JSON.' });
+    }
+
+    return res.status(201).json({
+      success: true,
+      count: createdList.length,
+      salespeople: createdList,
+      message: `${createdList.length} vendedor(es) cadastrado(s) com sucesso!`
+    });
+  } catch (error: any) {
+    console.error('Error in batch salespeople creation:', error);
+    res.status(500).json({ error: `Erro ao cadastrar vendedores em lote: ${error.message}` });
+  }
+});
+
 // 3. Update salesperson
 app.put('/api/salespeople/:id', async (req, res) => {
   const { id } = req.params;
@@ -1165,6 +1292,9 @@ app.patch('/api/salespeople/:id/toggle-active', async (req: any, res) => {
 
 // 3.3 Batch assign leads to a salesperson
 app.post('/api/leads/batch-assign', async (req: any, res) => {
+  if (req.user && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem transferir carteiras de leads.' });
+  }
   const { leadIds, targetSalespersonId, targetSalespersonName } = req.body;
 
   if (!Array.isArray(leadIds) || leadIds.length === 0) {
@@ -1223,7 +1353,10 @@ app.post('/api/leads/batch-assign', async (req: any, res) => {
 });
 
 // 4. Delete salesperson (Reassigns their leads back to Thomas / primary)
-app.delete('/api/salespeople/:id', async (req, res) => {
+app.delete('/api/salespeople/:id', async (req: any, res) => {
+  if (req.user && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem remover vendedores.' });
+  }
   const { id } = req.params;
 
   if (id === 'seller-thomas') {
@@ -1257,7 +1390,10 @@ app.delete('/api/salespeople/:id', async (req, res) => {
 });
 
 // 5. Assign a single lead to a salesperson
-app.put('/api/leads/:id/assign', async (req, res) => {
+app.put('/api/leads/:id/assign', async (req: any, res) => {
+  if (req.user && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem transferir leads entre vendedores.' });
+  }
   const { id } = req.params;
   const { salespersonId, salespersonName } = req.body;
 
@@ -1306,7 +1442,10 @@ app.put('/api/leads/:id/assign', async (req, res) => {
 
 // 6. DISTRIBUTE UNCONTACTED LEADS (DIVISÃO DE LEADS)
 // RULE: ONLY leads in column 'Leads' with 0 calls are eligible. Leads in progress are NEVER moved.
-app.post('/api/leads/distribute', async (req, res) => {
+app.post('/api/leads/distribute', async (req: any, res) => {
+  if (req.user && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem redistribuir carteiras.' });
+  }
   const { targetSalespersonId, mode = 'percentage', value, sourceSalespersonId } = req.body;
 
   if (!targetSalespersonId) {
@@ -2136,20 +2275,25 @@ app.post('/api/leads/batch', async (req, res) => {
   }
 });
 
-// 3. Update lead column status
+// 3. Update lead column status & sub-stages
 app.put('/api/leads/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { columnStatus } = req.body;
+  const { columnStatus, subStatus, lossReason } = req.body;
 
-  if (!PIPELINE_COLUMNS.includes(columnStatus as ColumnStatus)) {
+  if (columnStatus && !PIPELINE_COLUMNS.includes(columnStatus as ColumnStatus)) {
     return res.status(400).json({ error: 'Status de coluna inválido.' });
   }
 
   try {
     if (usePostgres && pgPool) {
       const result = await pgPool.query(
-        `UPDATE leads SET column_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
-        [columnStatus, id]
+        `UPDATE leads 
+         SET column_status = COALESCE($1, column_status),
+             sub_status = COALESCE($2, sub_status),
+             loss_reason = COALESCE($3, loss_reason),
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $4 RETURNING *`,
+        [columnStatus || null, subStatus || null, lossReason || null, id]
       );
       if (result.rowCount === 0) {
         return res.status(404).json({ error: 'Lead não encontrado.' });
@@ -2160,7 +2304,9 @@ app.put('/api/leads/:id/status', async (req, res) => {
       if (!lead) {
         return res.status(404).json({ error: 'Lead não encontrado.' });
       }
-      lead.columnStatus = columnStatus as ColumnStatus;
+      if (columnStatus) lead.columnStatus = columnStatus as ColumnStatus;
+      if (subStatus !== undefined) lead.subStatus = subStatus;
+      if (lossReason !== undefined) lead.lossReason = lossReason;
       lead.updatedAt = new Date().toISOString();
       memoryLeadsMap.set(id, lead);
       return res.json({ success: true, lead });

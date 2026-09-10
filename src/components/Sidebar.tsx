@@ -76,7 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="text-xs font-bold text-neutral-900 truncate">
                   {activeSalesperson.name}
                 </span>
-                {onClearSalespersonFilter && (
+                {isAdmin && onClearSalespersonFilter && (
                   <button
                     onClick={onClearSalespersonFilter}
                     className="text-[10px] text-blue-700 hover:text-blue-900 underline font-semibold"
@@ -202,26 +202,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="truncate">Gerenciar Tags</span>
             </button>
 
-            {/* Upload ZIP & Demo Seeds (Only for Admin) */}
+            {/* Upload ZIP (Only for Admin) */}
             {isAdmin && (
-              <>
-                <button
-                  onClick={onOpenZipModal}
-                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors shadow-2xs"
-                >
-                  <FileArchive className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                  <span className="truncate">Upload ZIP</span>
-                </button>
-
-                <button
-                  onClick={onSeedSamples}
-                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors border border-neutral-200"
-                  title="Adiciona 5 leads de demonstração para testes rápidos"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="truncate">Leads de Exemplo</span>
-                </button>
-              </>
+              <button
+                onClick={onOpenZipModal}
+                className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors shadow-2xs"
+              >
+                <FileArchive className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                <span className="truncate">Upload ZIP</span>
+              </button>
             )}
           </div>
         </div>

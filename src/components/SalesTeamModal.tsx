@@ -3,10 +3,11 @@ import { Salesperson, Lead, CustomTag } from '../types';
 import { 
   X, UserPlus, Users, Share2, Shield, Trash2, Edit3, Check, 
   Sparkles, AlertCircle, ArrowRight, UserCheck, CheckCircle2, Percent, Hash,
-  Link, ExternalLink, MessageCircle, Copy
+  Link, ExternalLink, MessageCircle, Copy, Code2
 } from 'lucide-react';
 import { getSalespersonAppUrl, getSalespersonSlug } from '../lib/salesperson';
 import { getWhatsAppUrl } from '../lib/phone';
+import { BulkCreateSalespeopleModal } from './BulkCreateSalespeopleModal';
 
 interface SalesTeamModalProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
   const [phone, setPhone] = useState('');
   const [selectedPaletteIndex, setSelectedPaletteIndex] = useState(1); // default Emerald for 2nd seller
   const [savingSeller, setSavingSeller] = useState(false);
+  const [isBatchJsonModalOpen, setIsBatchJsonModalOpen] = useState(false);
 
   // Distribution states
   const [distSourceId, setDistSourceId] = useState<string>('ALL');
@@ -397,11 +399,24 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
 
               {/* Add New Salesperson Form */}
               <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/60 space-y-3.5">
-                <div className="flex items-center gap-2">
-                  <UserPlus className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-xs font-bold text-neutral-900">
-                    Cadastrar Novo(a) Vendedor(a)
-                  </h3>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-xs font-bold text-neutral-900">
+                      Cadastrar Novo(a) Vendedor(a)
+                    </h3>
+                  </div>
+
+                  {/* Botão Discreto: Criar Vários via JSON */}
+                  <button
+                    type="button"
+                    onClick={() => setIsBatchJsonModalOpen(true)}
+                    className="px-2.5 py-1 text-[11px] font-semibold text-neutral-700 hover:text-blue-700 bg-white hover:bg-neutral-50 border border-neutral-300 rounded-lg shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer touch-manipulation"
+                    title="Abrir popup para colar JSON e criar vários vendedores de uma só vez"
+                  >
+                    <Code2 className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Criar Vários via JSON</span>
+                  </button>
                 </div>
 
                 <form onSubmit={handleCreateSalesperson} className="space-y-3">
@@ -712,6 +727,14 @@ export const SalesTeamModal: React.FC<SalesTeamModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Popup de Criação de Vendedores em Lote (JSON) */}
+      <BulkCreateSalespeopleModal
+        isOpen={isBatchJsonModalOpen}
+        onClose={() => setIsBatchJsonModalOpen(false)}
+        onSuccess={onRefreshSalespeople}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 };
