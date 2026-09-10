@@ -25,6 +25,18 @@ export function generateSessionToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Helper para validar se o usuário é administrador (Super Admin ou Thomas dono da operação)
+export function isUserAdmin(user: any): boolean {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (user.id === 'user-thomas' || user.salespersonId === 'seller-thomas') return true;
+  const email = String(user.email || '').toLowerCase().trim();
+  if (email === 'admin@nyroh.com' || email === 'admin@crm.com' || email.startsWith('thomas@')) {
+    return true;
+  }
+  return false;
+}
+
 // Usuários padrão pré-configurados
 const nyrohAdminCreds = hashPassword('Thomas123456!', 'crm_salt_admin_nyroh');
 const adminCreds = hashPassword('admin123', 'crm_salt_admin');
@@ -56,8 +68,8 @@ export const DEFAULT_USERS: StoredUser[] = [
   {
     id: 'user-thomas',
     name: 'Thomas',
-    email: 'thomas@empresa.com',
-    role: 'salesperson',
+    email: 'thomas@nyroh.com',
+    role: 'admin', // Thomas é Administrador e Dono da operação comercial
     salespersonId: 'seller-thomas',
     active: true,
     passwordHash: thomasCreds.hash,

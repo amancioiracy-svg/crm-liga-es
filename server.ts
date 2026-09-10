@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 import pg from 'pg';
 import { Lead, CallLog, ColumnStatus, PIPELINE_COLUMNS, CustomTag, Salesperson, DistributeLeadsParams, User, AuditLog } from './src/types.js';
 import { getLeadNiche } from './src/lib/niche.js';
-import { hashPassword, verifyPassword, generateSessionToken, DEFAULT_USERS, StoredUser } from './src/lib/serverAuth.js';
+import { hashPassword, verifyPassword, generateSessionToken, DEFAULT_USERS, StoredUser, isUserAdmin } from './src/lib/serverAuth.js';
 
 const app = express();
 const PORT = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_ID
@@ -283,6 +283,17 @@ async function initDatabase(retries = 5, delayMs = 3000) {
           [nyrohCreds.hash, nyrohCreds.salt]
         );
 
+        // Garantir cirurgicamente que Thomas e Administradores tenham perfil 'admin' no banco
+        await client.query(`
+          UPDATE users 
+          SET role = 'admin' 
+          WHERE salesperson_id = 'seller-thomas' 
+             OR id = 'user-thomas' 
+             OR LOWER(email) LIKE 'thomas@%'
+             OR LOWER(email) = 'admin@nyroh.com'
+             OR LOWER(email) = 'admin@crm.com'
+        `);
+
         // Seed default tags if table is empty
         const tagCountRes = await client.query(`SELECT COUNT(*)::int AS count FROM custom_tags`);
         if (tagCountRes.rows[0].count === 0) {
@@ -442,7 +453,11 @@ app.use(async (req: any, res, next) => {
       );
 
       if (sessionRes.rows.length > 0) {
-        req.user = sessionRes.rows[0];
+        const u = sessionRes.rows[0];
+        if (isUserAdmin(u)) {
+          u.role = 'admin';
+        }
+        req.user = u;
       } else {
         req.user = null;
       }
@@ -451,11 +466,12 @@ app.use(async (req: any, res, next) => {
       if (session && session.expiresAt > Date.now()) {
         const user = memoryUsersMap.get(session.userId);
         if (user && user.active) {
+          const role = isUserAdmin(user) ? 'admin' : user.role;
           req.user = {
             id: user.id,
             name: user.name,
             email: user.email,
-            role: user.role,
+            role,
             salespersonId: user.salespersonId,
             active: user.active
           };
@@ -547,11 +563,12 @@ app.post('/api/auth/login', async (req, res) => {
       path: '/'
     });
 
+    const effectiveRole = isUserAdmin(foundUser) ? 'admin' : foundUser.role;
     const publicUserData: User = {
       id: foundUser.id,
       name: foundUser.name,
       email: foundUser.email,
-      role: foundUser.role,
+      role: effectiveRole,
       salespersonId: foundUser.salespersonId,
       active: foundUser.active,
       createdAt: foundUser.createdAt || new Date().toISOString()
@@ -633,7 +650,7 @@ app.post('/api/auth/change-password', async (req: any, res) => {
 
 // 3.2 Sincronizar credenciais de todos os vendedores manualmente
 app.post('/api/admin/sync-credentials', async (req: any, res) => {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
   }
   try {
@@ -649,7 +666,7 @@ app.post('/api/admin/sync-credentials', async (req: any, res) => {
 
 // 4. Listar Todos os Usuários
 app.get('/api/admin/users', async (req: any, res) => {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
   }
 
@@ -680,7 +697,7 @@ app.get('/api/admin/users', async (req: any, res) => {
 
 // 5. Criar Novo Usuário
 app.post('/api/admin/users', async (req: any, res) => {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
   }
 
@@ -745,7 +762,7 @@ app.post('/api/admin/users', async (req: any, res) => {
 
 // 6. Atualizar Usuário (Ativar/Desativar ou Resetar Senha)
 app.patch('/api/admin/users/:id', async (req: any, res) => {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
   }
 
@@ -794,7 +811,7 @@ app.patch('/api/admin/users/:id', async (req: any, res) => {
 
 // 6.1 Excluir Usuário de Acesso
 app.delete('/api/admin/users/:id', async (req: any, res) => {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
   }
   const { id } = req.params;
@@ -829,7 +846,7 @@ app.delete('/api/admin/users/:id', async (req: any, res) => {
 
 // 7. Audit Logs
 app.get('/api/admin/audit-logs', async (req: any, res) => {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Acesso restrito ao Administrador.' });
   }
 
@@ -1535,7 +1552,7 @@ app.patch('/api/salespeople/:id/toggle-active', async (req: any, res) => {
 
 // 3.3 Batch assign leads to a salesperson
 app.post('/api/leads/batch-assign', async (req: any, res) => {
-  if (req.user && req.user.role !== 'admin') {
+  if (req.user && !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem transferir carteiras de leads.' });
   }
   const { leadIds, targetSalespersonId, targetSalespersonName } = req.body;
@@ -1597,7 +1614,7 @@ app.post('/api/leads/batch-assign', async (req: any, res) => {
 
 // 4. Delete salesperson (Reassigns their leads back to Thomas / primary)
 app.delete('/api/salespeople/:id', async (req: any, res) => {
-  if (req.user && req.user.role !== 'admin') {
+  if (req.user && !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem remover vendedores.' });
   }
   const { id } = req.params;
@@ -1643,7 +1660,7 @@ app.delete('/api/salespeople/:id', async (req: any, res) => {
 
 // 5. Assign a single lead to a salesperson
 app.put('/api/leads/:id/assign', async (req: any, res) => {
-  if (req.user && req.user.role !== 'admin') {
+  if (req.user && !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem transferir leads entre vendedores.' });
   }
   const { id } = req.params;
@@ -1695,7 +1712,7 @@ app.put('/api/leads/:id/assign', async (req: any, res) => {
 // 6. DISTRIBUTE UNCONTACTED LEADS (DIVISÃO DE LEADS)
 // RULE: ONLY leads in column 'Leads' with 0 calls are eligible. Leads in progress are NEVER moved.
 app.post('/api/leads/distribute', async (req: any, res) => {
-  if (req.user && req.user.role !== 'admin') {
+  if (req.user && !isUserAdmin(req.user)) {
     return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem redistribuir carteiras.' });
   }
   const { targetSalespersonId, mode = 'percentage', value, sourceSalespersonId } = req.body;

@@ -534,7 +534,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubTab('carteiras')}
+            onClick={() => {
+              setActiveSubTab('carteiras');
+              onChangeSection?.('carteiras');
+            }}
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap ${
               activeSubTab === 'carteiras'
                 ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
@@ -546,7 +549,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubTab('auditoria')}
+            onClick={() => {
+              setActiveSubTab('auditoria');
+              onChangeSection?.('auditoria');
+            }}
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap ${
               activeSubTab === 'auditoria'
                 ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
@@ -558,7 +564,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubTab('blindagem')}
+            onClick={() => {
+              setActiveSubTab('blindagem');
+              onChangeSection?.('blindagem');
+            }}
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap ${
               activeSubTab === 'blindagem'
                 ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
